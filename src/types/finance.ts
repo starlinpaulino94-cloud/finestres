@@ -1,0 +1,136 @@
+// Shared types for the personal finance app (Fintra)
+
+export type Kind = "gasto" | "ingreso";
+export type YesNo = "yes" | "no";
+
+export interface Category {
+  _id: string;
+  name: string;
+  kind: Kind;
+  color?: string;
+  emoji?: string;
+}
+
+export interface BankAccount {
+  _id: string;
+  name: string;
+  bank_name?: string;
+  account_type?: "cuenta" | "tarjeta_credito" | "tarjeta_debito" | "efectivo";
+  last_four?: string;
+  balance?: number;
+  currency?: string;
+  sync_status?: "conectada" | "pendiente" | "desconectada";
+  last_sync_at?: string;
+}
+
+export interface Transaction {
+  _id: string;
+  concept: string;
+  amount: number;
+  kind: Kind;
+  spent_at: string;
+  source?: "manual" | "voz" | "banco";
+  auto_categorized?: YesNo;
+  notes?: string;
+  category?: Category | string | null;
+  bank_account?: BankAccount | string | null;
+  createdAt?: string;
+}
+
+export interface Budget {
+  _id: string;
+  month: string;
+  limit_amount: number;
+  alert_threshold?: number;
+  category?: Category | string | null;
+}
+
+export interface BudgetProgress {
+  _id: string;
+  month: string;
+  limit_amount: number;
+  alert_threshold: number;
+  spent: number;
+  pct: number;
+  category: { _id: string; name: string; color: string; emoji: string } | null;
+}
+
+export interface SavingsGoal {
+  _id: string;
+  title: string;
+  target_amount: number;
+  saved_amount?: number;
+  monthly_contribution?: number;
+  deadline?: string;
+  status?: "activa" | "pausada" | "completada";
+  notes?: string;
+}
+
+export interface OutingPlan {
+  _id: string;
+  title: string;
+  planned_at?: string;
+  estimated_cost?: number;
+  max_recommended?: number;
+  real_cost?: number;
+  ai_advice?: string;
+  status?: "planificada" | "realizada" | "cancelada";
+}
+
+export interface AppNotification {
+  _id: string;
+  title: string;
+  message?: string;
+  severity?: "info" | "aviso" | "critica";
+  is_read?: YesNo;
+  createdAt?: string;
+}
+
+export interface VoiceNote {
+  _id: string;
+  title?: string;
+  transcription?: string;
+  ai_summary?: string;
+  status?: "procesada" | "error";
+  createdAt?: string;
+  audio_file?: { name: string; url?: string } | null;
+}
+
+export interface WeeklyReport {
+  _id: string;
+  title: string;
+  period_start?: string;
+  period_end?: string;
+  total_spent?: number;
+  total_income?: number;
+  health_score?: number;
+  content?: string;
+  sent_by_email?: YesNo;
+  pdf_file?: { name: string; url?: string } | null;
+  createdAt?: string;
+}
+
+export interface DashboardData {
+  month: string;
+  monthLabel: string;
+  income: number;
+  expense: number;
+  balance: number;
+  budgetTotal: number;
+  budgetSpent: number;
+  dailySafeSpend: number;
+  daysLeft: number;
+  savedTotal: number;
+  savingsTarget: number;
+  healthScore: number;
+  budgets: BudgetProgress[];
+  categoryBreakdown: { name: string; color: string; emoji: string; amount: number }[];
+  monthlySeries: { month: string; label: string; income: number; expense: number }[];
+  dailySeries: { day: string; amount: number }[];
+  goals: SavingsGoal[];
+  outings: OutingPlan[];
+  recentTransactions: Transaction[];
+  accounts: BankAccount[];
+  notifications: AppNotification[];
+  unreadCount: number;
+}

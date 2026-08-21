@@ -1,0 +1,134 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { totalumSdk } from "@/lib/totalum";
+import {
+  askAi,
+  buildDashboard,
+  extractJson,
+  formatCurrency,
+  getSessionUser,
+  serializeError,
+} from "@/lib/finance";
+
+const schema = z.object({
+  title: z.string().min(1),
+  planned_at: z.string().optional(),
+  estimated_cost: z.number().min(0).optional(),
+});
+
+export async function GET() {
+  try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ ok: false, error: { message: "No autenticado" } }, { status: 401 });
+
+    const res = await totalumSdk.crud.query("outing_plan", {
+      _filter: { user: user.id },
+      _sort: { planned_at: "asc" },
+      _limit: 100,
+    });
+    return NextResponse.json({ ok: true, data: res.data });
+  } catch (err) {
+    console.error("[API ERROR] GET /api/outings", err);
+    return NextResponse.json({ ok: false, error: serializeError(err) }, { status: 500 });
+  }
+}
+
+/** Creates an outing and asks the AI for the maximum the user can safely spend */
+export async function POST(req: Request) {
+  try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ ok: false, error: { message: "No autenticado" } }, { status: 401 });
+
+    const body = await req.json().catch(() => ({}));
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ ok: false, error: parsed.error.flatten() }, { status: 400 });
+    }
+
+    const data = parsed.data;
+    const dashboard = await buildDashboard(user.id);
+    const plannedOther = dashboard.outings
+      .filter((o) => o.status === "planificada")
+      .reduce((s, o) => s + (o.estimated_cost || 0), 0);
+
+    const context = `Datos financieros del usuario (mes ${dashboard.monthLabel}):
+- Ingresos del mes: ${formatCurrency(dashboard.income)}
+- Gastos del mes: ${formatCurrency(dashboard.expense)}
+- Presupuesto total del mes: ${formatCurrency(dashboard.budgetTotal)} (gastado ${formatCurrency(dashboard.budgetSpent)})
+- Gasto diario seguro calculado: ${formatCurrency(dashboard.dailySafeSpend)} durante ${dashboard.daysLeft} días restantes
+- Aportes mensuales comprometidos en metas de ahorro: ${formatCurrency(
+      dashboard.goals.reduce((s, g) => s + (g.monthly_contribution || 0), 0)
+    )}
+- Otras salidas ya planificadas este mes: ${formatCurrency(plannedOther)}
+- Presupuesto de "Restaurantes y salidas": ${
+      dashboard.budgets.find((b) => b.category?.name?.toLowerCase().includes("restaurante"))
+        ? `${formatCurrency(
+            dashboard.budgets.find((b) => b.category?.name?.toLowerCase().includes("restaurante"))!.limit_amount
+          )} con ${formatCurrency(
+            dashboard.budgets.find((b) => b.category?.name?.toLowerCase().includes("restaurante"))!.spent
+          )} ya gastados`
+        : "no definido"
+    }
+
+Nueva salida: "${data.title}"${data.planned_at ? `, fecha ${new Date(data.planned_at).toLocaleDateString("es-ES")}` : ""}${
+      data.estimated_cost ? `, coste estimado por el usuario ${formatCurrency(data.estimated_cost)}` : ""
+    }.
+
+Devuelve SOLO JSON: {"maximo_recomendado": number, "consejo": "2 o 3 frases en español, tono cercano y concreto"}`;
+
+    let maxRecommended =
+      Math.round(Math.max(dashboard.dailySafeSpend * 1.5 - plannedOther * 0.1, 15) * 100) / 100;
+    let advice = "";
+
+    try {
+      const text = await askAi(
+        "Eres un asesor financiero personal español. Calculas cuánto puede gastar alguien en una salida sin comprometer su presupuesto ni sus metas de ahorro. Respondes solo con JSON válido.",
+        context,
+        { maxTokens: 400, temperature: 0.4 }
+      );
+      const parsedAi = extractJson<{ maximo_recomendado: number; consejo: string }>(text);
+      if (parsedAi && Number.isFinite(Number(parsedAi.maximo_recomendado))) {
+        maxRecommended = Math.round(Number(parsedAi.maximo_recomendado) * 100) / 100;
+        advice = parsedAi.consejo || "";
+      }
+    } catch (aiErr) {
+      console.error("[API] /api/outings IA no disponible, usando cálculo local:", aiErr);
+    }
+
+    if (!advice) {
+      advice = `Con tu ritmo actual puedes gastar hasta ${formatCurrency(
+        maxRecommended
+      )} en esta salida sin comprometer tu presupuesto del mes. Te quedan ${formatCurrency(
+        dashboard.dailySafeSpend
+      )} de gasto diario seguro durante ${dashboard.daysLeft} días.`;
+    }
+
+    const res = await totalumSdk.crud.createRecord("outing_plan", {
+      title: data.title,
+      planned_at: data.planned_at ? new Date(data.planned_at) : new Date(),
+      estimated_cost: data.estimated_cost ?? 0,
+      max_recommended: maxRecommended,
+      ai_advice: advice,
+      status: "planificada",
+      user: user.id,
+    });
+
+    if ((data.estimated_cost ?? 0) > maxRecommended) {
+      await totalumSdk.crud.createRecord("notification", {
+        title: `Ojo con "${data.title}"`,
+        message: `Tu estimación (${formatCurrency(
+          data.estimated_cost ?? 0
+        )}) supera el máximo recomendado de ${formatCurrency(maxRecommended)}. ${advice}`,
+        severity: "aviso",
+        is_read: "no",
+        user: user.id,
+      });
+    }
+
+    console.log("[API] salida planificada:", data.title, "máximo:", maxRecommended);
+    return NextResponse.json({ ok: true, data: { outing: res.data, maxRecommended, advice } });
+  } catch (err) {
+    console.error("[API ERROR] POST /api/outings", err);
+    return NextResponse.json({ ok: false, error: serializeError(err) }, { status: 500 });
+  }
+}

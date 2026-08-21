@@ -47,27 +47,27 @@ export default function RegisterPage() {
 
       if (result.error) {
         console.error(result.error);
-        setError(result.error.message || "Error registering. The email might already be in use.");
+        setError(result.error.message || "No he podido crear la cuenta. Puede que ese correo ya esté registrado.");
         setLoading(false);
         return;
       }
 
       // Use window.location for a full page reload to ensure session cookie is picked up
-      window.location.href = "/";
+      window.location.href = "/dashboard";
     } catch (err: any) {
       console.error("Registration error:", err);
-      setError(err.message || "Error registering. The email might already be in use.");
+      setError(err.message || "No he podido crear la cuenta. Puede que ese correo ya esté registrado.");
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-background to-muted/20">
-      <Card className="w-full max-w-md shadow-xl border-2">
+    <div className="min-h-screen flex items-center justify-center px-4 grid-bg">
+      <Card className="w-full max-w-md rounded-3xl shadow-2xl">
         <CardHeader className="space-y-2 text-center pb-6">
-          <CardTitle className="text-3xl font-bold tracking-tight">Create Account</CardTitle>
+          <CardTitle className="font-display text-3xl">Crear tu cuenta</CardTitle>
           <CardDescription className="text-base">
-            Enter your information to get started
+            Empieza a controlar tus finanzas en un minuto
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleRegister}>
@@ -78,7 +78,7 @@ export default function RegisterPage() {
               </Alert>
             )}
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-semibold">Email Address</Label>
+              <Label htmlFor="email" className="text-sm font-semibold">Correo electrónico</Label>
               <Input
                 id="email"
                 type="email"
@@ -90,11 +90,11 @@ export default function RegisterPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="name" className="text-sm font-semibold">Full Name</Label>
+              <Label htmlFor="name" className="text-sm font-semibold">Nombre completo</Label>
               <Input
                 id="name"
                 type="text"
-                placeholder="Your name"
+                placeholder="Tu nombre"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 required
@@ -102,11 +102,11 @@ export default function RegisterPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-semibold">Password</Label>
+              <Label htmlFor="password" className="text-sm font-semibold">Contraseña</Label>
               <Input
                 id="password"
                 type="password"
-                placeholder="At least 6 characters"
+                placeholder="Mínimo 6 caracteres"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 required
@@ -115,11 +115,11 @@ export default function RegisterPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword" className="text-sm font-semibold">Confirm Password</Label>
+              <Label htmlFor="confirmPassword" className="text-sm font-semibold">Repite la contraseña</Label>
               <Input
                 id="confirmPassword"
                 type="password"
-                placeholder="Re-enter your password"
+                placeholder="Repite la contraseña"
                 value={formData.confirmPassword}
                 onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                 required
@@ -134,12 +134,12 @@ export default function RegisterPage() {
               className="w-full h-11 text-base font-semibold transition-all hover:scale-[1.02]"
               disabled={loading}
             >
-              {loading ? "Creating account..." : "Sign Up"}
+              {loading ? "Creando cuenta…" : "Crear cuenta"}
             </Button>
             <div className="text-sm text-center text-muted-foreground">
-              Already have an account?{" "}
+              ¿Ya tienes cuenta?{" "}
               <Link href="/login" className="font-semibold text-primary hover:underline transition-colors">
-                Sign in here
+                Entra aquí
               </Link>
             </div>
           </CardFooter>
