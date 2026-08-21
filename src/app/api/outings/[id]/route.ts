@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { totalumSdk } from "@/lib/totalum";
-import { getSessionUser, serializeError } from "@/lib/finance";
+import { assertOwner, getSessionUser, serializeError } from "@/lib/finance";
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -8,6 +8,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (!user) return NextResponse.json({ ok: false, error: { message: "No autenticado" } }, { status: 401 });
 
     const { id } = await params;
+    const owner = await assertOwner("outing_plan", id, user.id);
+    if (!owner.ok) {
+      return NextResponse.json({ ok: false, error: { message: owner.message } }, { status: owner.status || 403 });
+    }
     const body = (await req.json().catch(() => ({}))) as Record<string, any>;
 
     const update: Record<string, any> = {};
@@ -32,6 +36,10 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     if (!user) return NextResponse.json({ ok: false, error: { message: "No autenticado" } }, { status: 401 });
 
     const { id } = await params;
+    const owner = await assertOwner("outing_plan", id, user.id);
+    if (!owner.ok) {
+      return NextResponse.json({ ok: false, error: { message: owner.message } }, { status: owner.status || 403 });
+    }
     await totalumSdk.crud.deleteRecordById("outing_plan", id);
     console.log("[API] salida eliminada:", id);
     return NextResponse.json({ ok: true, data: { _id: id } });

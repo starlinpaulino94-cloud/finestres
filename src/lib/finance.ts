@@ -2,6 +2,17 @@ import "server-only";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { totalumSdk } from "@/lib/totalum";
+import {
+  computeBudgets,
+  computeHealthScore,
+  computeNetWorth,
+  computeSafeToSpend,
+  computeTotals,
+  isExpense,
+  isIncome,
+  round2,
+  sumMoney,
+} from "@/lib/finance-core";
 import type {
   BudgetProgress,
   DashboardData,
@@ -30,6 +41,39 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   } catch (err) {
     console.error("[finance] getSessionUser error:", err);
     return null;
+  }
+}
+
+/**
+ * Comprueba que el registro pertenece al usuario de la sesión antes de
+ * modificarlo o borrarlo. Protege contra IDOR: sin esto, cualquier usuario
+ * autenticado podría editar los movimientos, metas o cuentas de otro
+ * simplemente cambiando el id de la URL.
+ */
+export interface OwnerCheck {
+  ok: boolean;
+  record?: any;
+  status?: number;
+  message?: string;
+}
+
+export async function assertOwner(table: string, id: string, userId: string): Promise<OwnerCheck> {
+  if (!id || typeof id !== "string") {
+    return { ok: false, status: 400, message: "Identificador no válido" };
+  }
+  try {
+    const res = await totalumSdk.crud.query(table, { _filter: { _id: id }, _limit: 1 });
+    const record = ((res.data as any[]) || [])[0];
+    if (!record) return { ok: false, status: 404, message: "No existe ese registro" };
+    const owner = typeof record.user === "object" && record.user ? record.user._id : record.user;
+    if (String(owner) !== String(userId)) {
+      console.warn("[security] intento de acceso a un registro de otro usuario:", { table, id, userId });
+      return { ok: false, status: 403, message: "Ese registro no es tuyo" };
+    }
+    return { ok: true, record };
+  } catch (err) {
+    console.error("[security] assertOwner error:", table, id, err);
+    throw err;
   }
 }
 
@@ -198,6 +242,31 @@ export async function bootstrapUserData(userId: string): Promise<{ created: bool
       user: userId,
     });
 
+    // Movimientos internos: demuestran que un pago de tarjeta o un traspaso
+    // entre cuentas propias NO se contabiliza como gasto.
+    transactions.push({
+      concept: "Pago de la tarjeta Visa",
+      amount: 240,
+      kind: "pago_tarjeta",
+      spent_at: new Date(base.getFullYear(), base.getMonth(), 5, 12, 0),
+      source: "manual",
+      auto_categorized: "no",
+      bank_account: accountIds[0],
+      transfer_account: accountIds[1],
+      user: userId,
+    });
+    transactions.push({
+      concept: "Retirada de efectivo en el cajero",
+      amount: 100,
+      kind: "transferencia",
+      spent_at: new Date(base.getFullYear(), base.getMonth(), 3, 12, 30),
+      source: "manual",
+      auto_categorized: "no",
+      bank_account: accountIds[0],
+      transfer_account: accountIds[2],
+      user: userId,
+    });
+
     const count = 9 + Math.floor(rnd() * 4);
     for (let i = 0; i < count; i++) {
       const tpl = expenseTemplates[Math.floor(rnd() * expenseTemplates.length)];
@@ -353,37 +422,49 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
   const transactions = ((txRes.data as any[]) || []) as Transaction[];
   const monthTx = transactions.filter((t) => monthKey(new Date(t.spent_at)) === month);
 
-  const income = monthTx.filter((t) => t.kind === "ingreso").reduce((s, t) => s + (t.amount || 0), 0);
-  const expense = monthTx.filter((t) => t.kind === "gasto").reduce((s, t) => s + (t.amount || 0), 0);
+  // Todos los importes salen del núcleo determinista (src/lib/finance-core.ts):
+  // las transferencias, los pagos de tarjeta y los ajustes NUNCA cuentan como
+  // gasto ni como ingreso.
+  const monthTotals = computeTotals(monthTx as any);
+  const income = monthTotals.income;
+  const expense = monthTotals.expense;
+
+  const categoryIdOf = (t: Transaction) =>
+    (typeof t.category === "object" && t.category ? (t.category as any)._id : t.category) || null;
+  const monthRows = monthTx.map((t) => ({
+    amount: t.amount,
+    kind: t.kind,
+    categoryId: categoryIdOf(t),
+  }));
 
   // Budgets with real spending
-  const budgets: BudgetProgress[] = ((budgetsRes.data as any[]) || []).map((b) => {
-    const cat = typeof b.category === "object" && b.category ? b.category : null;
-    const spent = monthTx
-      .filter((t) => {
-        const tCat = typeof t.category === "object" && t.category ? (t.category as any)._id : t.category;
-        return t.kind === "gasto" && cat && tCat === cat._id;
-      })
-      .reduce((s, t) => s + (t.amount || 0), 0);
-    const limit = b.limit_amount || 0;
+  const budgetRows = ((budgetsRes.data as any[]) || []).map((b) => ({
+    _id: b._id,
+    month: b.month,
+    limit_amount: b.limit_amount,
+    alert_threshold: b.alert_threshold,
+    categoryId: typeof b.category === "object" && b.category ? b.category._id : b.category || null,
+    _category: typeof b.category === "object" && b.category ? b.category : null,
+  }));
+  const budgets: BudgetProgress[] = computeBudgets(budgetRows as any, monthRows).map((b) => {
+    const cat = (b as any)._category;
     return {
       _id: b._id,
       month: b.month,
-      limit_amount: limit,
-      alert_threshold: b.alert_threshold || 80,
-      spent,
-      pct: limit > 0 ? (spent / limit) * 100 : 0,
+      limit_amount: b.limit_amount,
+      alert_threshold: b.alert_threshold,
+      spent: b.spent,
+      pct: b.pct,
       category: cat
         ? { _id: cat._id, name: cat.name, color: cat.color || "#4ade80", emoji: cat.emoji || "💸" }
         : null,
     };
   });
-  budgets.sort((a, b) => b.pct - a.pct);
 
   // Category breakdown for the current month
   const breakdownMap = new Map<string, { name: string; color: string; emoji: string; amount: number }>();
   for (const t of monthTx) {
-    if (t.kind !== "gasto") continue;
+    if (!isExpense(t.kind)) continue;
     const cat: any = typeof t.category === "object" && t.category ? t.category : null;
     const key = cat?._id || "sin-categoria";
     const current = breakdownMap.get(key) || {
@@ -402,11 +483,12 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
     const d = addMonths(now, -(5 - i));
     const key = monthKey(d);
     const rows = transactions.filter((t) => monthKey(new Date(t.spent_at)) === key);
+    const totals = computeTotals(rows as any);
     return {
       month: key,
       label: MONTH_NAMES[d.getMonth()].slice(0, 3),
-      income: rows.filter((t) => t.kind === "ingreso").reduce((s, t) => s + (t.amount || 0), 0),
-      expense: rows.filter((t) => t.kind === "gasto").reduce((s, t) => s + (t.amount || 0), 0),
+      income: totals.income,
+      expense: totals.expense,
     };
   });
 
@@ -414,25 +496,56 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
   const totalDays = daysInMonth(now);
   const dailySeries = Array.from({ length: totalDays }, (_, i) => {
     const day = i + 1;
-    const amount = monthTx
-      .filter((t) => t.kind === "gasto" && new Date(t.spent_at).getDate() === day)
-      .reduce((s, t) => s + (t.amount || 0), 0);
+    const amount = sumMoney(
+      monthTx
+        .filter((t) => isExpense(t.kind) && new Date(t.spent_at).getDate() === day)
+        .map((t) => t.amount)
+    );
     return { day: String(day), amount };
   });
 
   const goals = ((goalsRes.data as any[]) || []) as any[];
-  const savedTotal = goals.reduce((s, g) => s + (g.saved_amount || 0), 0);
-  const savingsTarget = goals.reduce((s, g) => s + (g.target_amount || 0), 0);
+  const savedTotal = sumMoney(goals.map((g) => g.saved_amount));
+  const savingsTarget = sumMoney(goals.map((g) => g.target_amount));
 
-  const budgetTotal = budgets.reduce((s, b) => s + b.limit_amount, 0);
-  const budgetSpent = budgets.reduce((s, b) => s + b.spent, 0);
+  const budgetTotal = sumMoney(budgets.map((b) => b.limit_amount));
+  const budgetSpent = sumMoney(budgets.map((b) => b.spent));
   const daysLeft = Math.max(totalDays - now.getDate() + 1, 1);
-  const dailySafeSpend = Math.max((budgetTotal - budgetSpent) / daysLeft, 0);
 
-  // Health score: savings rate (60%) + budget discipline (40%)
-  const savingsRate = income > 0 ? Math.max(Math.min((income - expense) / income, 1), 0) : 0;
-  const discipline = budgetTotal > 0 ? Math.max(Math.min(1 - budgetSpent / budgetTotal, 1), 0) : 0.5;
-  const healthScore = Math.round(savingsRate * 60 + discipline * 40);
+  const accounts = ((accountsRes.data as any[]) || []) as any[];
+  const outings = (((outingsRes.data as any[]) || []) as any[]).filter((o) => o.status !== "cancelada");
+
+  // Patrimonio neto = activos − pasivos (las tarjetas en negativo son deuda)
+  const netWorth = computeNetWorth(accounts);
+
+  // "Disponible para gastar": liquidez menos obligaciones, reservas y colchón.
+  // NUNCA es el saldo del banco, y el desglose se muestra al usuario.
+  const safeToSpend = computeSafeToSpend({
+    today: now,
+    accounts,
+    monthIncome: income,
+    monthExpense: expense,
+    budgetTotal,
+    budgetSpent,
+    goals,
+    plannedOutings: outings,
+    incomeDates: transactions.filter((t) => isIncome(t.kind)).map((t) => t.spent_at),
+  });
+
+  const pastMonths = monthlySeries.filter((m) => m.month !== month && m.expense > 0);
+  const avgMonthlyExpense = pastMonths.length
+    ? round2(sumMoney(pastMonths.map((m) => m.expense)) / pastMonths.length)
+    : expense;
+
+  const health = computeHealthScore({
+    monthIncome: income,
+    monthExpense: expense,
+    budgetTotal,
+    budgetSpent,
+    liquidity: netWorth.liquidity,
+    cardDebt: netWorth.cardDebt,
+    avgMonthlyExpense,
+  });
 
   const notifications = ((notifRes.data as any[]) || []) as any[];
 
@@ -441,24 +554,28 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
     monthLabel: monthLabel(month),
     income,
     expense,
-    balance: income - expense,
+    internalMoved: monthTotals.internal,
+    balance: monthTotals.net,
     budgetTotal,
     budgetSpent,
-    dailySafeSpend,
+    safeToSpend,
+    netWorth,
+    // Compatibilidad: el límite diario ya viene del motor determinista
+    dailySafeSpend: safeToSpend.dailyLimit,
     daysLeft,
     savedTotal,
     savingsTarget,
-    healthScore,
+    healthScore: health.score,
+    healthComponents: health.components,
+    avgMonthlyExpense,
     budgets,
     categoryBreakdown,
     monthlySeries,
     dailySeries,
     goals: goals as any,
-    outings: (((outingsRes.data as any[]) || []) as any).filter(
-      (o: any) => o.status !== "cancelada"
-    ),
+    outings: outings as any,
     recentTransactions: transactions.slice(0, 12),
-    accounts: ((accountsRes.data as any[]) || []) as any,
+    accounts: accounts as any,
     notifications: notifications as any,
     unreadCount: notifications.filter((n) => n.is_read !== "yes").length,
   };

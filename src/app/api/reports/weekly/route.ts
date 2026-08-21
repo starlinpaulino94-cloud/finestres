@@ -7,6 +7,7 @@ import {
   getSessionUser,
   serializeError,
 } from "@/lib/finance";
+import { computeTotals, isExpense } from "@/lib/finance-core";
 import { weeklyEmailHtml, weeklyReportHtml } from "@/lib/report-html";
 
 /** Generates the detailed weekly report (AI + PDF) and optionally emails it */
@@ -39,13 +40,15 @@ export async function POST(req: Request) {
     const week = all.filter((t) => new Date(t.spent_at) >= start);
     const prevWeek = all.filter((t) => new Date(t.spent_at) < start);
 
-    const totalSpent = week.filter((t) => t.kind === "gasto").reduce((s, t) => s + (t.amount || 0), 0);
-    const totalIncome = week.filter((t) => t.kind === "ingreso").reduce((s, t) => s + (t.amount || 0), 0);
-    const prevSpent = prevWeek.filter((t) => t.kind === "gasto").reduce((s, t) => s + (t.amount || 0), 0);
+    // Transferencias, pagos de tarjeta y ajustes NO son gasto ni ingreso
+    const weekTotals = computeTotals(week);
+    const totalSpent = weekTotals.expense;
+    const totalIncome = weekTotals.income;
+    const prevSpent = computeTotals(prevWeek).expense;
 
     const catMap = new Map<string, number>();
     for (const t of week) {
-      if (t.kind !== "gasto") continue;
+      if (!isExpense(t.kind)) continue;
       const name = (typeof t.category === "object" && t.category ? t.category.name : null) || "Sin categoría";
       catMap.set(name, (catMap.get(name) || 0) + (t.amount || 0));
     }
@@ -54,7 +57,7 @@ export async function POST(req: Request) {
       .sort((a, b) => b.amount - a.amount);
 
     const topExpenses = week
-      .filter((t) => t.kind === "gasto")
+      .filter((t) => isExpense(t.kind))
       .sort((a, b) => (b.amount || 0) - (a.amount || 0))
       .slice(0, 8)
       .map((t) => ({
@@ -73,7 +76,10 @@ export async function POST(req: Request) {
 - Mayores gastos: ${topExpenses.map((t) => `${t.concept} ${formatCurrency(t.amount)}`).join("; ") || "ninguno"}
 - Presupuesto mensual: ${formatCurrency(dashboard.budgetTotal)}, gastado ${formatCurrency(dashboard.budgetSpent)}
 - Presupuestos al límite: ${dashboard.budgets.filter((b) => b.pct >= 80).map((b) => `${b.category?.name} ${b.pct.toFixed(0)}%`).join("; ") || "ninguno"}
-- Gasto diario seguro restante: ${formatCurrency(dashboard.dailySafeSpend)} (${dashboard.daysLeft} días)
+- Disponible para gastar (calculado por la app, no lo recalcules): ${formatCurrency(dashboard.safeToSpend.available)} ${dashboard.safeToSpend.horizonLabel}
+- Límite diario recomendado: ${formatCurrency(dashboard.safeToSpend.dailyLimit)}
+- Patrimonio neto: ${formatCurrency(dashboard.netWorth.netWorth)} (activos ${formatCurrency(dashboard.netWorth.assets)}, deudas ${formatCurrency(dashboard.netWorth.liabilities)})
+- Salud financiera ${dashboard.healthScore}/100: ${dashboard.healthComponents.map((c) => `${c.label} ${c.points}/${c.max}`).join(", ")}
 - Metas de ahorro: ${dashboard.goals.map((g) => `${g.title}: ${formatCurrency(g.saved_amount || 0)} de ${formatCurrency(g.target_amount)}`).join("; ") || "ninguna"}
 - Salidas planificadas: ${dashboard.outings.filter((o) => o.status === "planificada").map((o) => `${o.title} (estimado ${formatCurrency(o.estimated_cost || 0)}, máximo ${formatCurrency(o.max_recommended || 0)})`).join("; ") || "ninguna"}
 

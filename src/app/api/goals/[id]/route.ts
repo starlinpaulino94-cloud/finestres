@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { totalumSdk } from "@/lib/totalum";
-import { getSessionUser, serializeError } from "@/lib/finance";
+import { assertOwner, getSessionUser, serializeError } from "@/lib/finance";
+import { round2 } from "@/lib/finance-core";
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -8,13 +9,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (!user) return NextResponse.json({ ok: false, error: { message: "No autenticado" } }, { status: 401 });
 
     const { id } = await params;
+    const owner = await assertOwner("savings_goal", id, user.id);
+    if (!owner.ok) {
+      return NextResponse.json({ ok: false, error: { message: owner.message } }, { status: owner.status || 403 });
+    }
     const body = (await req.json().catch(() => ({}))) as Record<string, any>;
 
     const update: Record<string, any> = {};
     if (body.title !== undefined) update.title = body.title;
-    if (body.target_amount !== undefined) update.target_amount = Number(body.target_amount);
-    if (body.saved_amount !== undefined) update.saved_amount = Number(body.saved_amount);
-    if (body.monthly_contribution !== undefined) update.monthly_contribution = Number(body.monthly_contribution);
+    if (body.target_amount !== undefined) update.target_amount = round2(body.target_amount);
+    if (body.saved_amount !== undefined) update.saved_amount = round2(body.saved_amount);
+    if (body.monthly_contribution !== undefined) update.monthly_contribution = round2(body.monthly_contribution);
     if (body.status !== undefined) update.status = body.status;
     if (body.notes !== undefined) update.notes = body.notes;
     if (body.deadline !== undefined) update.deadline = new Date(body.deadline);
@@ -34,6 +39,10 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     if (!user) return NextResponse.json({ ok: false, error: { message: "No autenticado" } }, { status: 401 });
 
     const { id } = await params;
+    const owner = await assertOwner("savings_goal", id, user.id);
+    if (!owner.ok) {
+      return NextResponse.json({ ok: false, error: { message: owner.message } }, { status: owner.status || 403 });
+    }
     await totalumSdk.crud.deleteRecordById("savings_goal", id);
     console.log("[API] meta eliminada:", id);
     return NextResponse.json({ ok: true, data: { _id: id } });

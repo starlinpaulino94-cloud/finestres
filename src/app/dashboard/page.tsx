@@ -7,15 +7,18 @@ import {
   ArrowUpRight,
   BellRing,
   CalendarClock,
+  HeartPulse,
+  Info,
+  Landmark,
   Mic,
   PiggyBank,
   Plus,
-  Wallet,
 } from "lucide-react";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { CategoryDonut, DailyBars, Meter, MoneyFlowChart, ScoreRing } from "@/components/charts";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
@@ -87,16 +90,80 @@ export default function DashboardPage() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Card className="rise rounded-3xl border-primary/30 bg-primary/[0.07] p-6">
               <div className="flex items-start justify-between">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Puedes gastar hoy</p>
-                <Wallet className="h-4 w-4 text-primary" />
+                <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                  Disponible para gastar
+                </p>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-primary transition-colors hover:bg-primary/10"
+                      aria-label="Ver cómo se calcula el disponible para gastar"
+                    >
+                      <Info className="h-3.5 w-3.5" /> Cómo lo calculo
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 rounded-2xl" align="end">
+                    <p className="text-sm font-medium">No es el saldo de tu banco</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Partimos de tu dinero líquido y restamos lo que ya está comprometido:
+                    </p>
+                    <ul className="mt-3 space-y-2">
+                      {data.safeToSpend.breakdown.map((item) => (
+                        <li key={item.label} className="flex items-start justify-between gap-3 text-xs">
+                          <span>
+                            <span className="font-medium">
+                              {item.sign} {item.label}
+                            </span>
+                            <span className="block text-muted-foreground">{item.hint}</span>
+                          </span>
+                          <span className="tabular shrink-0 font-medium">{money(item.amount)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-xs">
+                      <span className="font-medium">Disponible</span>
+                      <span className="tabular font-semibold text-primary">
+                        {money(data.safeToSpend.available)}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      Estimamos tu próximo ingreso el{" "}
+                      {new Date(data.safeToSpend.nextIncomeDate).toLocaleDateString("es-ES", {
+                        day: "numeric",
+                        month: "long",
+                      })}{" "}
+                      según tu historial. Es una estimación, no un dato del banco.
+                    </p>
+                  </PopoverContent>
+                </Popover>
               </div>
-              <p className="tabular mt-3 text-4xl font-semibold text-primary">{money(data.dailySafeSpend)}</p>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Durante los {data.daysLeft} días que quedan de mes
+              <p className="tabular mt-3 text-4xl font-semibold text-primary">
+                {money(data.safeToSpend.available)}
               </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {money(data.safeToSpend.dailyLimit)} al día · {money(data.safeToSpend.weeklyLimit)} a la semana,{" "}
+                {data.safeToSpend.horizonLabel}
+              </p>
+              {data.safeToSpend.budgetCapApplied && (
+                <p className="mt-1 text-[11px] text-primary">Límite marcado por tu presupuesto del mes</p>
+              )}
             </Card>
 
             <Card className="rise rounded-3xl p-6 [animation-delay:60ms]">
+              <div className="flex items-start justify-between">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Patrimonio neto</p>
+                <Landmark className="h-4 w-4 text-primary" />
+              </div>
+              <p className="tabular mt-3 text-3xl font-semibold">{money(data.netWorth.netWorth)}</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {money(data.netWorth.assets)} en activos − {money(data.netWorth.liabilities)} en deudas
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Líquido disponible hoy: <span className="tabular">{money(data.netWorth.liquidity)}</span>
+              </p>
+            </Card>
+
+            <Card className="rise rounded-3xl p-6 [animation-delay:120ms]">
               <div className="flex items-start justify-between">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Gastos del mes</p>
                 <ArrowDownRight className="h-4 w-4" style={{ color: "var(--chart-5)" }} />
@@ -110,7 +177,7 @@ export default function DashboardPage() {
               </div>
             </Card>
 
-            <Card className="rise rounded-3xl p-6 [animation-delay:120ms]">
+            <Card className="rise rounded-3xl p-6 [animation-delay:180ms]">
               <div className="flex items-start justify-between">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Ingresos del mes</p>
                 <ArrowUpRight className="h-4 w-4 text-primary" />
@@ -119,20 +186,11 @@ export default function DashboardPage() {
               <p className="mt-2 text-xs text-muted-foreground">
                 Balance: <span className="tabular">{money(data.balance)}</span>
               </p>
-            </Card>
-
-            <Card className="rise flex items-center gap-5 rounded-3xl p-6 [animation-delay:180ms]">
-              <ScoreRing score={data.healthScore} label="salud" />
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Salud financiera</p>
-                <p className="mt-2 text-sm leading-relaxed">
-                  {data.healthScore >= 66
-                    ? "Vas muy bien: ahorras y respetas tus límites."
-                    : data.healthScore >= 40
-                      ? "Vas justo. Ajusta las categorías en rojo."
-                      : "Cuidado: estás gastando casi todo lo que entra."}
+              {data.internalMoved > 0 && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {money(data.internalMoved)} movidos entre tus cuentas (no cuentan como gasto)
                 </p>
-              </div>
+              )}
             </Card>
           </div>
 
@@ -208,6 +266,30 @@ export default function DashboardPage() {
                 <h2 className="font-display text-xl">Ritmo diario</h2>
                 <p className="mb-4 text-xs text-muted-foreground">Gasto de cada día de {data.monthLabel}</p>
                 <DailyBars data={data.dailySeries} />
+              </Card>
+
+              <Card className="rise rounded-3xl p-6 [animation-delay:100ms]">
+                <div className="mb-4 flex items-center gap-2">
+                  <HeartPulse className="h-4 w-4 text-primary" />
+                  <h2 className="font-display text-xl">Salud financiera</h2>
+                </div>
+                <div className="flex items-center gap-5">
+                  <ScoreRing score={data.healthScore} label="salud" />
+                  <ul className="flex-1 space-y-2">
+                    {data.healthComponents.map((c) => (
+                      <li key={c.key}>
+                        <div className="flex items-baseline justify-between gap-2 text-xs">
+                          <span className="truncate">{c.label}</span>
+                          <span className="tabular shrink-0 text-muted-foreground">
+                            {c.points}/{c.max}
+                          </span>
+                        </div>
+                        <Meter value={c.points} max={c.max} />
+                        <p className="mt-1 text-[11px] text-muted-foreground">{c.detail}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </Card>
 
               <Card className="rise rounded-3xl p-6 [animation-delay:120ms]">

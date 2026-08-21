@@ -1,5 +1,15 @@
 // Shared types for the personal finance app (Fintra)
+import type {
+  BreakdownItem,
+  HealthComponent,
+  NetWorth,
+  SafeToSpend,
+  TxKind,
+} from "@/lib/finance-core";
 
+export type { BreakdownItem, HealthComponent, NetWorth, SafeToSpend, TxKind };
+
+/** Tipo de categoría: sólo hay categorías de gasto y de ingreso */
 export type Kind = "gasto" | "ingreso";
 export type YesNo = "yes" | "no";
 
@@ -25,13 +35,16 @@ export interface Transaction {
   _id: string;
   concept: string;
   amount: number;
-  kind: Kind;
+  /** gasto | ingreso | transferencia | pago_tarjeta | ajuste */
+  kind: TxKind;
   spent_at: string;
   source?: "manual" | "voz" | "banco";
   auto_categorized?: YesNo;
   notes?: string;
   category?: Category | string | null;
   bank_account?: BankAccount | string | null;
+  /** Cuenta destino en transferencias y pagos de tarjeta */
+  transfer_account?: BankAccount | string | null;
   createdAt?: string;
 }
 
@@ -113,14 +126,22 @@ export interface DashboardData {
   monthLabel: string;
   income: number;
   expense: number;
+  /** Volumen movido entre cuentas propias: no es gasto ni ingreso */
+  internalMoved: number;
   balance: number;
   budgetTotal: number;
   budgetSpent: number;
+  /** Motor determinista "disponible para gastar", con su desglose explicable */
+  safeToSpend: SafeToSpend;
+  netWorth: NetWorth;
+  /** Límite diario recomendado (= safeToSpend.dailyLimit) */
   dailySafeSpend: number;
   daysLeft: number;
   savedTotal: number;
   savingsTarget: number;
   healthScore: number;
+  healthComponents: HealthComponent[];
+  avgMonthlyExpense: number;
   budgets: BudgetProgress[];
   categoryBreakdown: { name: string; color: string; emoji: string; amount: number }[];
   monthlySeries: { month: string; label: string; income: number; expense: number }[];

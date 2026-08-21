@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { totalumSdk } from "@/lib/totalum";
-import { getSessionUser, serializeError } from "@/lib/finance";
+import { assertOwner, getSessionUser, serializeError } from "@/lib/finance";
+import { round2 } from "@/lib/finance-core";
 
 /** Updates an account: the user keeps its balance and details up to date manually */
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -9,6 +10,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (!user) return NextResponse.json({ ok: false, error: { message: "No autenticado" } }, { status: 401 });
 
     const { id } = await params;
+    const owner = await assertOwner("bank_account", id, user.id);
+    if (!owner.ok) {
+      return NextResponse.json({ ok: false, error: { message: owner.message } }, { status: owner.status || 403 });
+    }
     const body = (await req.json().catch(() => ({}))) as Record<string, any>;
 
     const update: Record<string, any> = {};
@@ -16,7 +21,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (body.bank_name !== undefined) update.bank_name = body.bank_name;
     if (body.account_type !== undefined) update.account_type = body.account_type;
     if (body.last_four !== undefined) update.last_four = body.last_four;
-    if (body.balance !== undefined) update.balance = Number(body.balance);
+    if (body.balance !== undefined) update.balance = round2(body.balance);
 
     const res = await totalumSdk.crud.editRecordById("bank_account", id, update);
     console.log("[API] cuenta actualizada:", id, update);

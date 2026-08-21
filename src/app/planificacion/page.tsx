@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CalendarClock, PiggyBank, Plus, Sparkles, Target, Wallet } from "lucide-react";
+import { Calculator, CalendarClock, PiggyBank, Plus, Sparkles, Target, Wallet } from "lucide-react";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { Meter } from "@/components/charts";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,28 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
 import type { BudgetProgress, DashboardData, OutingPlan, SavingsGoal } from "@/types/finance";
+
+/** Resultado del simulador de compras: todas las cifras las calcula el backend */
+interface PurchaseSimulationResult {
+  amount: number;
+  concept: string;
+  verdict: "puedes" | "justo" | "espera" | "no";
+  headline: string;
+  remaining: number;
+  waitDays: number;
+  impacts: string[];
+  available: number;
+  dailyLimit: number;
+  horizonLabel: string;
+  explanation: string;
+}
+
+const VERDICT_STYLE: Record<string, { label: string; className: string }> = {
+  puedes: { label: "Puedes permitírtelo", className: "border-primary/40 bg-primary/[0.08] text-primary" },
+  justo: { label: "Vas justo", className: "border-amber-500/40 bg-amber-500/10 text-amber-500" },
+  espera: { label: "Mejor espera", className: "border-amber-500/40 bg-amber-500/10 text-amber-500" },
+  no: { label: "No es recomendable", className: "border-destructive/40 bg-destructive/10 text-destructive" },
+};
 import { toast } from "sonner";
 
 function money(v: number) {
@@ -31,6 +53,10 @@ export default function PlanificacionPage() {
   const [outingForm, setOutingForm] = useState({ title: "", cost: "", date: "" });
   const [planning, setPlanning] = useState(false);
   const [lastAdvice, setLastAdvice] = useState<{ max: number; advice: string } | null>(null);
+
+  const [simForm, setSimForm] = useState({ amount: "", concept: "" });
+  const [simulating, setSimulating] = useState(false);
+  const [simResult, setSimResult] = useState<PurchaseSimulationResult | null>(null);
 
   const load = useCallback(async () => {
     const res = await api.get<DashboardData>("/api/dashboard");
@@ -150,6 +176,27 @@ export default function PlanificacionPage() {
     await load();
   };
 
+  const simulate = async () => {
+    const amount = Number(simForm.amount.replace(",", "."));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Escribe el importe que quieres gastar");
+      return;
+    }
+    setSimulating(true);
+    const res = await api.post<PurchaseSimulationResult>("/api/simulate", {
+      amount,
+      concept: simForm.concept.trim() || undefined,
+    });
+    setSimulating(false);
+    if (!res.ok || !res.data) {
+      console.error("[Planificación] error simulando compra:", res.error);
+      toast.error("No he podido simular la compra");
+      return;
+    }
+    console.log("[Planificación] simulación:", res.data.verdict, res.data.remaining);
+    setSimResult(res.data);
+  };
+
   if (loading || !data) {
     return (
       <AppShell>
@@ -181,6 +228,9 @@ export default function PlanificacionPage() {
           </TabsTrigger>
           <TabsTrigger value="salidas" className="rounded-full">
             <CalendarClock className="mr-2 h-4 w-4" /> Salidas
+          </TabsTrigger>
+          <TabsTrigger value="simulador" className="rounded-full">
+            <Calculator className="mr-2 h-4 w-4" /> Simulador
           </TabsTrigger>
         </TabsList>
 
@@ -235,12 +285,25 @@ export default function PlanificacionPage() {
             <div className="space-y-4">
               <Card className="rounded-3xl border-primary/30 bg-primary/[0.06] p-6">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                  Máximo diario seguro
+                  Máximo diario recomendado
                 </p>
-                <p className="tabular mt-2 text-4xl font-semibold text-primary">{money(data.dailySafeSpend)}</p>
+                <p className="tabular mt-2 text-4xl font-semibold text-primary">
+                  {money(data.safeToSpend.dailyLimit)}
+                </p>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Te quedan {money(Math.max(data.budgetTotal - data.budgetSpent, 0))} para {data.daysLeft} días.
+                  Tienes {money(data.safeToSpend.available)} disponibles {data.safeToSpend.horizonLabel}, ya
+                  descontadas tus obligaciones y reservas.
                 </p>
+                <ul className="mt-4 space-y-1.5 border-t border-primary/20 pt-3">
+                  {data.safeToSpend.breakdown.map((item) => (
+                    <li key={item.label} className="flex justify-between gap-3 text-[11px] text-muted-foreground">
+                      <span>
+                        {item.sign} {item.label}
+                      </span>
+                      <span className="tabular">{money(item.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
               </Card>
               <Card className="rounded-3xl p-6">
                 <h3 className="mb-3 font-display text-lg">Categorías al límite</h3>
@@ -477,6 +540,105 @@ export default function PlanificacionPage() {
                   <li className="text-sm text-muted-foreground">No hay salidas planificadas todavía.</li>
                 )}
               </ul>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* ---------------- Simulador de compras ---------------- */}
+        <TabsContent value="simulador">
+          <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+            <Card className="rounded-3xl p-6">
+              <h2 className="font-display text-xl">¿Puedo permitírmelo?</h2>
+              <p className="mb-6 text-xs text-muted-foreground">
+                Dime cuánto te quieres gastar y calculo el impacto real sobre tu disponible, tu presupuesto y tus
+                metas. Las cifras las calcula la app, la IA sólo te lo explica.
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="sim-concept">¿En qué?</Label>
+                  <Input
+                    id="sim-concept"
+                    value={simForm.concept}
+                    onChange={(e) => setSimForm({ ...simForm, concept: e.target.value })}
+                    placeholder="Portátil nuevo"
+                    className="mt-1.5 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="sim-amount">Importe (€)</Label>
+                  <Input
+                    id="sim-amount"
+                    inputMode="decimal"
+                    value={simForm.amount}
+                    onChange={(e) => setSimForm({ ...simForm, amount: e.target.value })}
+                    placeholder="900"
+                    className="mt-1.5 rounded-xl"
+                  />
+                </div>
+                <Button onClick={simulate} disabled={simulating} className="w-full rounded-full">
+                  {simulating ? "Calculando…" : "Simular la compra"}
+                </Button>
+                <div className="rounded-2xl bg-secondary/60 p-4 text-xs text-muted-foreground">
+                  Ahora mismo tienes{" "}
+                  <span className="tabular font-medium text-foreground">{money(data.safeToSpend.available)}</span>{" "}
+                  disponibles {data.safeToSpend.horizonLabel} ({money(data.safeToSpend.dailyLimit)} al día).
+                </div>
+              </div>
+            </Card>
+
+            <Card className="rounded-3xl p-6">
+              <h2 className="mb-5 font-display text-xl">Resultado</h2>
+              {!simResult ? (
+                <p className="text-sm text-muted-foreground">
+                  Aún no has simulado nada. Prueba con una compra que estés valorando y te diré si te la puedes
+                  permitir, si tendrías que esperar o qué meta se retrasaría.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  <div
+                    className={`rounded-2xl border p-4 ${
+                      VERDICT_STYLE[simResult.verdict]?.className || "border-border"
+                    }`}
+                  >
+                    <p className="text-[11px] uppercase tracking-[0.16em]">
+                      {VERDICT_STYLE[simResult.verdict]?.label || "Resultado"}
+                    </p>
+                    <p className="mt-1 text-lg font-semibold">{simResult.headline}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-border p-4">
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Compra</p>
+                      <p className="tabular mt-1 text-lg font-semibold">{money(simResult.amount)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-border p-4">
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Te quedaría</p>
+                      <p
+                        className={`tabular mt-1 text-lg font-semibold ${
+                          simResult.remaining < 0 ? "text-destructive" : ""
+                        }`}
+                      >
+                        {money(simResult.remaining)}
+                      </p>
+                    </div>
+                  </div>
+                  <ul className="space-y-2">
+                    {simResult.impacts.map((impact, i) => (
+                      <li key={i} className="flex gap-2 text-sm text-muted-foreground">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                        {impact}
+                      </li>
+                    ))}
+                  </ul>
+                  {simResult.explanation && (
+                    <div className="rounded-2xl bg-secondary/60 p-4">
+                      <p className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                        <Sparkles className="h-3.5 w-3.5" /> Lo que opina tu asistente
+                      </p>
+                      <p className="text-sm leading-relaxed">{simResult.explanation}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </Card>
           </div>
         </TabsContent>

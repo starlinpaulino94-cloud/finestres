@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
+import { TX_KINDS, computeTotals, kindMeta } from "@/lib/finance-core";
 import type { BankAccount, Category, Transaction } from "@/types/finance";
 import { toast } from "sonner";
 
@@ -49,8 +50,11 @@ export default function MovimientosPage() {
     kind: "gasto",
     category: "",
     bank_account: "",
+    transfer_account: "",
     spent_at: new Date().toISOString().slice(0, 10),
   });
+
+  const formKind = kindMeta(form.kind);
 
   const load = useCallback(async () => {
     const [tx, cats, accs] = await Promise.all([
@@ -85,9 +89,8 @@ export default function MovimientosPage() {
   }, [transactions, kindFilter, categoryFilter, search]);
 
   const totals = useMemo(() => {
-    const gasto = filtered.filter((t) => t.kind === "gasto").reduce((s, t) => s + (t.amount || 0), 0);
-    const ingreso = filtered.filter((t) => t.kind === "ingreso").reduce((s, t) => s + (t.amount || 0), 0);
-    return { gasto, ingreso };
+    const totals = computeTotals(filtered);
+    return { gasto: totals.expense, ingreso: totals.income, interno: totals.internal };
   }, [filtered]);
 
   const create = async () => {
@@ -96,19 +99,30 @@ export default function MovimientosPage() {
       toast.error("Indica un concepto y un importe válido");
       return;
     }
+    if (formKind.needsDestination) {
+      if (!form.bank_account || !form.transfer_account) {
+        toast.error(`Este movimiento (${formKind.label.toLowerCase()}) necesita cuenta de origen y de destino`);
+        return;
+      }
+      if (form.bank_account === form.transfer_account) {
+        toast.error("La cuenta de origen y la de destino no pueden ser la misma");
+        return;
+      }
+    }
     setSaving(true);
     const res = await api.post("/api/transactions", {
       concept: form.concept.trim(),
       amount,
       kind: form.kind,
       spent_at: new Date(form.spent_at).toISOString(),
-      category: form.category || undefined,
+      category: formKind.needsDestination ? undefined : form.category || undefined,
       bank_account: form.bank_account || undefined,
+      transfer_account: formKind.needsDestination ? form.transfer_account : undefined,
     });
     setSaving(false);
     if (!res.ok) {
       console.error("[Movimientos] error creando:", res.error);
-      toast.error("No he podido guardar el movimiento");
+      toast.error((res.error as any)?.message || "No he podido guardar el movimiento");
       return;
     }
     toast.success("Movimiento registrado");
@@ -134,7 +148,7 @@ export default function MovimientosPage() {
       <PageHeader
         eyebrow="movimientos"
         title="Gastos e ingresos"
-        description="Todo lo que entra y sale, venga de una nota de voz o de un registro manual."
+        description="Gastos, ingresos, transferencias y pagos de tarjeta. Los movimientos entre tus cuentas no se cuentan como gasto."
         action={
           <div className="flex flex-wrap gap-2">
             <Dialog open={open} onOpenChange={setOpen}>
@@ -146,7 +160,9 @@ export default function MovimientosPage() {
               <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                   <DialogTitle>Nuevo movimiento</DialogTitle>
-                  <DialogDescription>Registra un gasto o un ingreso manualmente.</DialogDescription>
+                  <DialogDescription>
+                    Registra un gasto, un ingreso, una transferencia entre tus cuentas o el pago de una tarjeta.
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
                   <div>
@@ -184,26 +200,43 @@ export default function MovimientosPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label>Tipo</Label>
-                      <Select value={form.kind} onValueChange={(v) => setForm({ ...form, kind: v })}>
+                      <Label>Tipo de movimiento</Label>
+                      <Select
+                        value={form.kind}
+                        onValueChange={(v) =>
+                          setForm({
+                            ...form,
+                            kind: v,
+                            category: kindMeta(v).needsDestination ? "" : form.category,
+                            transfer_account: kindMeta(v).needsDestination ? form.transfer_account : "",
+                          })
+                        }
+                      >
                         <SelectTrigger className="mt-1.5 w-full">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="gasto">Gasto</SelectItem>
-                          <SelectItem value="ingreso">Ingreso</SelectItem>
+                          {TX_KINDS.map((k) => (
+                            <SelectItem key={k.value} value={k.value}>
+                              {k.label}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div>
                       <Label>Categoría</Label>
-                      <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
+                      <Select
+                        value={form.category}
+                        onValueChange={(v) => setForm({ ...form, category: v })}
+                        disabled={formKind.needsDestination}
+                      >
                         <SelectTrigger className="mt-1.5 w-full">
-                          <SelectValue placeholder="Elegir" />
+                          <SelectValue placeholder={formKind.needsDestination ? "No aplica" : "Elegir"} />
                         </SelectTrigger>
                         <SelectContent>
                           {categories
-                            .filter((c) => c.kind === form.kind)
+                            .filter((c) => c.kind === (form.kind === "ingreso" ? "ingreso" : "gasto"))
                             .map((c) => (
                               <SelectItem key={c._id} value={c._id}>
                                 {c.emoji} {c.name}
@@ -213,20 +246,47 @@ export default function MovimientosPage() {
                       </Select>
                     </div>
                   </div>
-                  <div>
-                    <Label>Cuenta</Label>
-                    <Select value={form.bank_account} onValueChange={(v) => setForm({ ...form, bank_account: v })}>
-                      <SelectTrigger className="mt-1.5 w-full">
-                        <SelectValue placeholder="Elegir cuenta" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {accounts.map((a) => (
-                          <SelectItem key={a._id} value={a._id}>
-                            {a.name} {a.last_four ? `· ${a.last_four}` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <p className="rounded-2xl bg-secondary/60 px-3.5 py-2.5 text-xs text-muted-foreground">
+                    {formKind.help}
+                  </p>
+                  <div className={formKind.needsDestination ? "grid grid-cols-2 gap-3" : ""}>
+                    <div>
+                      <Label>{formKind.needsDestination ? "Cuenta de origen" : "Cuenta"}</Label>
+                      <Select value={form.bank_account} onValueChange={(v) => setForm({ ...form, bank_account: v })}>
+                        <SelectTrigger className="mt-1.5 w-full">
+                          <SelectValue placeholder="Elegir cuenta" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {accounts.map((a) => (
+                            <SelectItem key={a._id} value={a._id}>
+                              {a.name} {a.last_four ? `· ${a.last_four}` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {formKind.needsDestination && (
+                      <div>
+                        <Label>Cuenta de destino</Label>
+                        <Select
+                          value={form.transfer_account}
+                          onValueChange={(v) => setForm({ ...form, transfer_account: v })}
+                        >
+                          <SelectTrigger className="mt-1.5 w-full">
+                            <SelectValue placeholder="Elegir cuenta" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {accounts
+                              .filter((a) => a._id !== form.bank_account)
+                              .map((a) => (
+                                <SelectItem key={a._id} value={a._id}>
+                                  {a.name} {a.last_four ? `· ${a.last_four}` : ""}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <DialogFooter>
@@ -256,9 +316,12 @@ export default function MovimientosPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="todos">Todos</SelectItem>
-              <SelectItem value="gasto">Gastos</SelectItem>
-              <SelectItem value="ingreso">Ingresos</SelectItem>
+              <SelectItem value="todos">Todos los tipos</SelectItem>
+              {TX_KINDS.map((k) => (
+                <SelectItem key={k.value} value={k.value}>
+                  {k.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select value={categoryFilter} onValueChange={setCategoryFilter}>
@@ -280,6 +343,12 @@ export default function MovimientosPage() {
           <p className="text-muted-foreground">
             {filtered.length} movimientos · gastos <span className="tabular text-foreground">{money(totals.gasto)}</span>{" "}
             · ingresos <span className="tabular text-primary">{money(totals.ingreso)}</span>
+            {totals.interno > 0 && (
+              <>
+                {" "}
+                · <span className="tabular">{money(totals.interno)}</span> movidos entre cuentas (ni gasto ni ingreso)
+              </>
+            )}
           </p>
         </div>
 
@@ -297,10 +366,13 @@ export default function MovimientosPage() {
             {filtered.map((t) => {
               const cat = typeof t.category === "object" && t.category ? (t.category as any) : null;
               const acc = typeof t.bank_account === "object" && t.bank_account ? (t.bank_account as any) : null;
+              const dest =
+                typeof t.transfer_account === "object" && t.transfer_account ? (t.transfer_account as any) : null;
+              const meta = kindMeta(t.kind);
               return (
                 <li key={t._id} className="group flex items-center gap-3 py-3">
                   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-secondary">
-                    {cat?.emoji || (t.kind === "ingreso" ? "💰" : "💸")}
+                    {meta.needsDestination ? "🔄" : cat?.emoji || (meta.income ? "💰" : "💸")}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{t.concept}</p>
@@ -310,14 +382,19 @@ export default function MovimientosPage() {
                         month: "short",
                         year: "numeric",
                       })}
-                      {cat ? ` · ${cat.name}` : ""}
+                      {meta.needsDestination ? ` · ${meta.label}` : cat ? ` · ${cat.name}` : ""}
                       {acc ? ` · ${acc.name}` : ""}
+                      {dest ? ` → ${dest.name}` : ""}
                       {` · ${SOURCE_LABEL[t.source || "manual"] || "Manual"}`}
                       {t.auto_categorized === "yes" ? " · categorizado por IA" : ""}
                     </p>
                   </div>
-                  <span className={`tabular text-sm font-semibold ${t.kind === "ingreso" ? "text-primary" : ""}`}>
-                    {t.kind === "ingreso" ? "+" : "−"}
+                  <span
+                    className={`tabular text-sm font-semibold ${
+                      meta.income ? "text-primary" : meta.expense ? "" : "text-muted-foreground"
+                    }`}
+                  >
+                    {meta.sign}
                     {money(t.amount)}
                   </span>
                   <button

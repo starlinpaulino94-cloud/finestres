@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { totalumSdk } from "@/lib/totalum";
 import { getSessionUser, monthKey, monthLabel, serializeError } from "@/lib/finance";
+import { computeTotals, kindMeta } from "@/lib/finance-core";
 import { statementHtml } from "@/lib/report-html";
 
 const schema = z.object({
@@ -39,13 +40,17 @@ export async function POST(req: Request) {
       concept: t.concept || "",
       category: (typeof t.category === "object" && t.category ? t.category.name : null) || "Sin categoría",
       account: (typeof t.bank_account === "object" && t.bank_account ? t.bank_account.name : null) || "—",
-      kind: t.kind || "gasto",
+      kind: kindMeta(t.kind).label,
+      sign: kindMeta(t.kind).sign,
+      rawKind: t.kind || "gasto",
       amount: t.amount || 0,
       source: t.source || "manual",
     }));
 
-    const totalSpent = rows.filter((r) => r.kind === "gasto").reduce((s, r) => s + r.amount, 0);
-    const totalIncome = rows.filter((r) => r.kind === "ingreso").reduce((s, r) => s + r.amount, 0);
+    // Los movimientos internos aparecen en el listado pero no en los totales
+    const totals = computeTotals(rows.map((r) => ({ amount: r.amount, kind: r.rawKind })));
+    const totalSpent = totals.expense;
+    const totalIncome = totals.income;
     const periodLabel = monthLabel(month);
 
     if (parsed.data.format === "excel") {

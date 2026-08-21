@@ -11,6 +11,7 @@ import {
   refreshBudgetAlerts,
   serializeError,
 } from "@/lib/finance";
+import { clamp, round2 } from "@/lib/finance-core";
 
 interface AiPlan {
   resumen?: string;
@@ -112,7 +113,8 @@ export async function POST(req: Request) {
 - Ingresos del mes: ${formatCurrency(dashboard.income)}
 - Gastos del mes: ${formatCurrency(dashboard.expense)}
 - Presupuesto del mes: ${formatCurrency(dashboard.budgetTotal)}, gastado ${formatCurrency(dashboard.budgetSpent)}
-- Gasto diario seguro: ${formatCurrency(dashboard.dailySafeSpend)} durante ${dashboard.daysLeft} días
+- Disponible real para gastar (ya calculado por la app, NO lo recalcules): ${formatCurrency(dashboard.safeToSpend.available)} ${dashboard.safeToSpend.horizonLabel}
+- Límite diario recomendado: ${formatCurrency(dashboard.safeToSpend.dailyLimit)}
 - Metas de ahorro: ${dashboard.goals.map((g) => `${g.title} (${formatCurrency(g.saved_amount || 0)}/${formatCurrency(g.target_amount)})`).join("; ") || "ninguna"}
 - Categorías existentes: ${categories.map((c) => c.name).join(", ")}
 
@@ -164,7 +166,7 @@ Reglas: usa arrays vacíos si no menciona algo. "tipo" es "ingreso" solo si clar
 
       const res = await totalumSdk.crud.createRecord("transaction", {
         concept: item.concepto || "Gasto por voz",
-        amount,
+        amount: round2(amount),
         kind,
         spent_at: date,
         source: "voz",
@@ -211,8 +213,7 @@ Reglas: usa arrays vacíos si no menciona algo. "tipo" es "ingreso" solo si clar
         title: item.titulo || "Nueva meta de ahorro",
         target_amount: target,
         saved_amount: 0,
-        monthly_contribution:
-          Number(item.aporte_mensual) || Math.round((target / months) * 100) / 100,
+        monthly_contribution: round2(Number(item.aporte_mensual) || target / months),
         deadline,
         status: "activa",
         notes: `Creada desde una nota de voz: "${transcription.slice(0, 160)}"`,
@@ -226,9 +227,14 @@ Reglas: usa arrays vacíos si no menciona algo. "tipo" es "ingreso" solo si clar
       const estimated = Number(item.coste_estimado) || 0;
       const plannedAt = new Date();
       plannedAt.setDate(plannedAt.getDate() + Math.max(Number(item.dias_hasta) || 0, 0));
-      const maxRecommended =
-        Math.round(Math.max(Math.min(estimated || dashboard.dailySafeSpend * 1.5, dashboard.dailySafeSpend * 1.5), 10) * 100) /
-        100;
+      // El máximo lo fija el motor determinista, nunca la IA
+      const maxRecommended = round2(
+        clamp(
+          Math.min(estimated || dashboard.safeToSpend.dailyLimit * 1.5, dashboard.safeToSpend.dailyLimit * 1.5),
+          0,
+          dashboard.safeToSpend.available
+        )
+      );
       const res = await totalumSdk.crud.createRecord("outing_plan", {
         title: item.titulo || "Salida",
         planned_at: plannedAt,
@@ -273,7 +279,8 @@ Reglas: usa arrays vacíos si no menciona algo. "tipo" es "ingreso" solo si clar
         budgets: createdBudgets,
         goals: createdGoals,
         outings: createdOutings,
-        dailySafeSpend: fresh.dailySafeSpend,
+        dailySafeSpend: fresh.safeToSpend.dailyLimit,
+        safeToSpend: fresh.safeToSpend,
       },
     });
   } catch (err) {

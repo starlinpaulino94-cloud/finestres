@@ -1,7 +1,9 @@
 import Link from "next/link";
 import {
+  ArrowLeftRight,
   ArrowRight,
   BellRing,
+  Calculator,
   ChartPie,
   PiggyBank,
   FileDown,
@@ -15,6 +17,21 @@ import { Button } from "@/components/ui/button";
 import { ASSETS } from "@/assets/files";
 
 const FEATURES = [
+  {
+    icon: Wallet,
+    title: "Disponible para gastar de verdad",
+    text: "No el saldo del banco: descontamos deuda de tarjeta, reservas de tus metas y un colchón, y te explicamos el cálculo.",
+  },
+  {
+    icon: Calculator,
+    title: "¿Puedo permitírmelo?",
+    text: "Dinos el importe y simulamos el impacto en tu disponible, tu presupuesto y tus metas antes de comprar.",
+  },
+  {
+    icon: ArrowLeftRight,
+    title: "Cuentas y tarjetas bien contadas",
+    text: "Mover dinero entre tus cuentas o pagar la tarjeta no es un gasto nuevo, y tus cifras lo reflejan.",
+  },
   {
     icon: Mic,
     title: "Notas de voz que se convierten en datos",

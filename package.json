@@ -11,7 +11,8 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv env.d.ts",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "setup:stripe-webhook": "ts-node scripts/setup-stripe-webhook.ts",
-    "test:serve": "TESTING_MODE=true NEXT_TELEMETRY_DISABLED=1 DISABLE_OPENNEXT=true PORT=3000 next start"
+    "test:serve": "TESTING_MODE=true NEXT_TELEMETRY_DISABLED=1 DISABLE_OPENNEXT=true PORT=3000 next start",
+    "test:finance": "ts-node --compiler-options '{\"module\":\"commonjs\",\"target\":\"es2020\",\"esModuleInterop\":true}' scripts/finance-tests.ts"
   },
   "cloudflare": {
     "label": "Totalum App",

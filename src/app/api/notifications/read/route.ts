@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { totalumSdk } from "@/lib/totalum";
-import { getSessionUser, serializeError } from "@/lib/finance";
+import { assertOwner, getSessionUser, serializeError } from "@/lib/finance";
 
 /** Marks one notification (id) or every unread notification as read */
 export async function POST(req: Request) {
@@ -11,6 +11,10 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => ({}))) as { id?: string };
 
     if (body.id) {
+      const owner = await assertOwner("notification", body.id, user.id);
+      if (!owner.ok) {
+        return NextResponse.json({ ok: false, error: { message: owner.message } }, { status: owner.status || 403 });
+      }
       await totalumSdk.crud.editRecordById("notification", body.id, { is_read: "yes" });
       console.log("[API] alerta marcada como leída:", body.id);
       return NextResponse.json({ ok: true, data: { updated: 1 } });

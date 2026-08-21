@@ -9,6 +9,7 @@ import {
   getSessionUser,
   serializeError,
 } from "@/lib/finance";
+import { clamp, round2 } from "@/lib/finance-core";
 
 const schema = z.object({
   title: z.string().min(1),
@@ -55,7 +56,8 @@ export async function POST(req: Request) {
 - Ingresos del mes: ${formatCurrency(dashboard.income)}
 - Gastos del mes: ${formatCurrency(dashboard.expense)}
 - Presupuesto total del mes: ${formatCurrency(dashboard.budgetTotal)} (gastado ${formatCurrency(dashboard.budgetSpent)})
-- Gasto diario seguro calculado: ${formatCurrency(dashboard.dailySafeSpend)} durante ${dashboard.daysLeft} días restantes
+- Disponible real para gastar (calculado por la app, no lo recalcules): ${formatCurrency(dashboard.safeToSpend.available)} ${dashboard.safeToSpend.horizonLabel}
+- Límite diario recomendado: ${formatCurrency(dashboard.safeToSpend.dailyLimit)}
 - Aportes mensuales comprometidos en metas de ahorro: ${formatCurrency(
       dashboard.goals.reduce((s, g) => s + (g.monthly_contribution || 0), 0)
     )}
@@ -76,8 +78,11 @@ Nueva salida: "${data.title}"${data.planned_at ? `, fecha ${new Date(data.planne
 
 Devuelve SOLO JSON: {"maximo_recomendado": number, "consejo": "2 o 3 frases en español, tono cercano y concreto"}`;
 
-    let maxRecommended =
-      Math.round(Math.max(dashboard.dailySafeSpend * 1.5 - plannedOther * 0.1, 15) * 100) / 100;
+    // Base determinista: nunca por encima de lo realmente disponible
+    const available = dashboard.safeToSpend.available;
+    let maxRecommended = round2(
+      Math.min(Math.max(dashboard.safeToSpend.dailyLimit * 1.5 - plannedOther * 0.1, 0), available)
+    );
     let advice = "";
 
     try {
@@ -88,7 +93,8 @@ Devuelve SOLO JSON: {"maximo_recomendado": number, "consejo": "2 o 3 frases en e
       );
       const parsedAi = extractJson<{ maximo_recomendado: number; consejo: string }>(text);
       if (parsedAi && Number.isFinite(Number(parsedAi.maximo_recomendado))) {
-        maxRecommended = Math.round(Number(parsedAi.maximo_recomendado) * 100) / 100;
+        // La IA propone, el motor determinista manda: nunca por encima del disponible real
+        maxRecommended = round2(clamp(Number(parsedAi.maximo_recomendado), 0, available));
         advice = parsedAi.consejo || "";
       }
     } catch (aiErr) {
@@ -96,11 +102,13 @@ Devuelve SOLO JSON: {"maximo_recomendado": number, "consejo": "2 o 3 frases en e
     }
 
     if (!advice) {
-      advice = `Con tu ritmo actual puedes gastar hasta ${formatCurrency(
+      advice = `Con tus cifras actuales puedes gastar hasta ${formatCurrency(
         maxRecommended
-      )} en esta salida sin comprometer tu presupuesto del mes. Te quedan ${formatCurrency(
-        dashboard.dailySafeSpend
-      )} de gasto diario seguro durante ${dashboard.daysLeft} días.`;
+      )} en esta salida sin comprometer tus metas ni tu presupuesto. Tienes ${formatCurrency(
+        available
+      )} disponibles ${dashboard.safeToSpend.horizonLabel} (${formatCurrency(
+        dashboard.safeToSpend.dailyLimit
+      )} al día).`;
     }
 
     const res = await totalumSdk.crud.createRecord("outing_plan", {

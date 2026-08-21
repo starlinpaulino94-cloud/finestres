@@ -140,7 +140,17 @@ export function statementHtml(params: {
   periodLabel: string;
   totalSpent: number;
   totalIncome: number;
-  rows: { date: string; concept: string; category: string; account: string; kind: string; amount: number }[];
+  rows: {
+    date: string;
+    concept: string;
+    category: string;
+    account: string;
+    /** Etiqueta del tipo de movimiento (Gasto, Ingreso, Transferencia…) */
+    kind: string;
+    /** Signo con el que se muestra el importe: "+", "−" o "=" */
+    sign: string;
+    amount: number;
+  }[];
 }): string {
   return `<html><head><meta charset="utf-8" /><style>${baseStyles}</style></head><body>
   <div class="brand">
@@ -163,7 +173,7 @@ export function statementHtml(params: {
             `<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.concept)}</td><td>${escapeHtml(
               r.category
             )}</td><td>${escapeHtml(r.account)}</td><td>${escapeHtml(r.kind)}</td><td class="num">${
-              r.kind === "ingreso" ? "+" : "−"
+              r.sign
             }${formatCurrency(r.amount)}</td></tr>`
         )
         .join("")}
