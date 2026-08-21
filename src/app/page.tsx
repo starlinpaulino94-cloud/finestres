@@ -3,7 +3,7 @@ import {
   ArrowRight,
   BellRing,
   ChartPie,
-  CreditCard,
+  PiggyBank,
   FileDown,
   Fingerprint,
   Mic,
@@ -31,9 +31,9 @@ const FEATURES = [
     text: "Avisos inteligentes cuando te acercas al límite de cualquier categoría, con la cifra que te queda.",
   },
   {
-    icon: CreditCard,
-    title: "Sincronización de tarjetas",
-    text: "Cada movimiento entra al instante y se categoriza automáticamente para optimizar tu presupuesto.",
+    icon: PiggyBank,
+    title: "Metas de ahorro organizadas",
+    text: "Le cuentas para qué ahorras y calcula el aporte mensual que necesitas para llegar a tiempo.",
   },
   {
     icon: ChartPie,

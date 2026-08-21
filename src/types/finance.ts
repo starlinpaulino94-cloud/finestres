@@ -19,8 +19,6 @@ export interface BankAccount {
   last_four?: string;
   balance?: number;
   currency?: string;
-  sync_status?: "conectada" | "pendiente" | "desconectada";
-  last_sync_at?: string;
 }
 
 export interface Transaction {

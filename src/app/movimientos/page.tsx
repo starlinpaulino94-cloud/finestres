@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Search, Trash2, RefreshCw } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,7 +30,6 @@ function money(v: number) {
 const SOURCE_LABEL: Record<string, string> = {
   manual: "Manual",
   voz: "Nota de voz",
-  banco: "Banco",
 };
 
 export default function MovimientosPage() {
@@ -38,7 +37,6 @@ export default function MovimientosPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState("todos");
   const [categoryFilter, setCategoryFilter] = useState("todas");
@@ -131,30 +129,14 @@ export default function MovimientosPage() {
     await load();
   };
 
-  const sync = async () => {
-    setSyncing(true);
-    const res = await api.post<{ imported: number; total: number }>("/api/accounts/sync", {});
-    setSyncing(false);
-    if (!res.ok) {
-      toast.error("No he podido sincronizar");
-      return;
-    }
-    toast.success(res.data?.imported ? `${res.data.imported} movimientos importados` : "Sin movimientos nuevos");
-    window.dispatchEvent(new Event("fintra:refresh"));
-    await load();
-  };
-
   return (
     <AppShell>
       <PageHeader
         eyebrow="movimientos"
         title="Gastos e ingresos"
-        description="Todo lo que entra y sale, venga de una nota de voz, de tus tarjetas o de un registro manual."
+        description="Todo lo que entra y sale, venga de una nota de voz o de un registro manual."
         action={
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="rounded-full" onClick={sync} disabled={syncing}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} /> Sincronizar
-            </Button>
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
                 <Button className="rounded-full">
@@ -330,7 +312,7 @@ export default function MovimientosPage() {
                       })}
                       {cat ? ` · ${cat.name}` : ""}
                       {acc ? ` · ${acc.name}` : ""}
-                      {` · ${SOURCE_LABEL[t.source || "manual"]}`}
+                      {` · ${SOURCE_LABEL[t.source || "manual"] || "Manual"}`}
                       {t.auto_categorized === "yes" ? " · categorizado por IA" : ""}
                     </p>
                   </div>

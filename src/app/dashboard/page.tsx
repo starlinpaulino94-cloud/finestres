@@ -9,7 +9,7 @@ import {
   CalendarClock,
   Mic,
   PiggyBank,
-  RefreshCw,
+  Plus,
   Wallet,
 } from "lucide-react";
 import { AppShell, PageHeader } from "@/components/AppShell";
@@ -29,7 +29,6 @@ function money(v: number) {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async () => {
     const res = await api.get<DashboardData>("/api/dashboard");
@@ -54,24 +53,6 @@ export default function DashboardPage() {
     })();
   }, [load]);
 
-  const syncBank = async () => {
-    setSyncing(true);
-    const res = await api.post<{ imported: number; total: number }>("/api/accounts/sync", {});
-    setSyncing(false);
-    if (!res.ok) {
-      console.error("[Dashboard] error sincronizando:", res.error);
-      toast.error("No he podido sincronizar tus cuentas");
-      return;
-    }
-    toast.success(
-      res.data?.imported
-        ? `${res.data.imported} movimientos nuevos por ${money(res.data.total || 0)}`
-        : "No hay movimientos nuevos"
-    );
-    window.dispatchEvent(new Event("fintra:refresh"));
-    await load();
-  };
-
   return (
     <AppShell>
       <PageHeader
@@ -80,9 +61,10 @@ export default function DashboardPage() {
         description="Todo lo que necesitas saber sobre tu mes: cuánto puedes gastar hoy, dónde se te va el dinero y cómo van tus metas."
         action={
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="rounded-full" onClick={syncBank} disabled={syncing}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-              Sincronizar banco
+            <Button asChild variant="outline" className="rounded-full">
+              <Link href="/movimientos">
+                <Plus className="mr-2 h-4 w-4" /> Añadir gasto
+              </Link>
             </Button>
             <Button asChild className="rounded-full">
               <Link href="/asistente">

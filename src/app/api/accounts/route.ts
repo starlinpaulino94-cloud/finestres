@@ -43,8 +43,6 @@ export async function POST(req: Request) {
       ...parsed.data,
       balance: parsed.data.balance ?? 0,
       currency: "EUR",
-      sync_status: parsed.data.account_type === "efectivo" ? "desconectada" : "conectada",
-      last_sync_at: new Date(),
       user: user.id,
     });
     console.log("[API] cuenta creada:", (res.data as any)?._id, parsed.data.name);
