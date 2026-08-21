@@ -81,7 +81,7 @@ Relaciones ya correctas: todo cuelga de `user` (manyToOne + inverso oneToMany);
 - **Exportación** PDF (estado de cuenta) y CSV/Excel del mes.
 - **Cuentas y tarjetas** manuales con saldo editable y patrimonio agregado.
 - **Bloqueo biométrico local** (WebAuthn de plataforma), **modo claro/oscuro**, responsive.
-- **Datos de arranque** realistas por usuario (`bootstrapUserData`), idempotentes.
+- **Arranque limpio por usuario** (`bootstrapUserData`), idempotente: crea sólo el catálogo de 19 categorías (estructura) y una notificación de bienvenida. **No genera ningún importe, cuenta, movimiento, meta ni presupuesto de ejemplo**: la cuenta nace vacía y el usuario la llena con sus datos reales guiado por la tarjeta «Primeros pasos» del panel.
 
 ---
 

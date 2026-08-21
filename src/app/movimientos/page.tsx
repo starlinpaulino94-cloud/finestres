@@ -43,6 +43,9 @@ export default function MovimientosPage() {
   const [categoryFilter, setCategoryFilter] = useState("todas");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [newCategory, setNewCategory] = useState("");
+  const [showNewCategory, setShowNewCategory] = useState(false);
+  const [creatingCategory, setCreatingCategory] = useState(false);
 
   const [form, setForm] = useState({
     concept: "",
@@ -92,6 +95,30 @@ export default function MovimientosPage() {
     const totals = computeTotals(filtered);
     return { gasto: totals.expense, ingreso: totals.income, interno: totals.internal };
   }, [filtered]);
+
+  /** Crea una categoría del mismo tipo que el movimiento en curso y la selecciona */
+  const createCategory = async () => {
+    const name = newCategory.trim();
+    if (!name) {
+      toast.error("Escribe el nombre de la categoría");
+      return;
+    }
+    const kind = form.kind === "ingreso" ? "ingreso" : "gasto";
+    setCreatingCategory(true);
+    const res = await api.post<Category>("/api/categories", { name, kind });
+    setCreatingCategory(false);
+    if (!res.ok || !res.data) {
+      console.error("[Movimientos] error creando categoría:", res.error);
+      toast.error("No he podido crear la categoría");
+      return;
+    }
+    console.log("[Movimientos] categoría creada:", res.data._id, name, kind);
+    setCategories((prev) => [...prev, res.data as Category]);
+    setForm((prev) => ({ ...prev, category: (res.data as Category)._id }));
+    setNewCategory("");
+    setShowNewCategory(false);
+    toast.success(`Categoría «${name}» creada`);
+  };
 
   const create = async () => {
     const amount = Number(form.amount.replace(",", "."));
@@ -244,6 +271,36 @@ export default function MovimientosPage() {
                             ))}
                         </SelectContent>
                       </Select>
+                      {!formKind.needsDestination && !showNewCategory && (
+                        <button
+                          type="button"
+                          onClick={() => setShowNewCategory(true)}
+                          className="mt-1.5 text-[11px] text-primary hover:underline"
+                        >
+                          + Nueva categoría
+                        </button>
+                      )}
+                      {!formKind.needsDestination && showNewCategory && (
+                        <div className="mt-1.5 flex gap-1.5">
+                          <Input
+                            value={newCategory}
+                            onChange={(e) => setNewCategory(e.target.value)}
+                            placeholder="Nombre"
+                            className="h-9"
+                            aria-label="Nombre de la nueva categoría"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-9 shrink-0"
+                            onClick={createCategory}
+                            disabled={creatingCategory}
+                          >
+                            {creatingCategory ? "…" : "Crear"}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <p className="rounded-2xl bg-secondary/60 px-3.5 py-2.5 text-xs text-muted-foreground">

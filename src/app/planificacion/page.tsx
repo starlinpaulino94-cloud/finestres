@@ -8,11 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
-import type { BudgetProgress, DashboardData, OutingPlan, SavingsGoal } from "@/types/finance";
+import type { BudgetProgress, Category, DashboardData, OutingPlan, SavingsGoal } from "@/types/finance";
 
 /** Resultado del simulador de compras: todas las cifras las calcula el backend */
 interface PurchaseSimulationResult {
@@ -47,6 +48,10 @@ export default function PlanificacionPage() {
   const [budgetEdits, setBudgetEdits] = useState<Record<string, string>>({});
   const [savingBudget, setSavingBudget] = useState<string | null>(null);
 
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [budgetForm, setBudgetForm] = useState({ category: "", limit: "" });
+  const [creatingBudget, setCreatingBudget] = useState(false);
+
   const [goalForm, setGoalForm] = useState({ title: "", target: "", deadline: "" });
   const [creatingGoal, setCreatingGoal] = useState(false);
 
@@ -59,7 +64,15 @@ export default function PlanificacionPage() {
   const [simResult, setSimResult] = useState<PurchaseSimulationResult | null>(null);
 
   const load = useCallback(async () => {
-    const res = await api.get<DashboardData>("/api/dashboard");
+    const [res, catRes] = await Promise.all([
+      api.get<DashboardData>("/api/dashboard"),
+      api.get<Category[]>("/api/categories"),
+    ]);
+    if (catRes.ok && catRes.data) {
+      setCategories(catRes.data);
+    } else {
+      console.error("[Planificación] error cargando categorías:", catRes.error);
+    }
     if (res.ok && res.data) {
       setData(res.data);
       setBudgetEdits(
@@ -99,6 +112,36 @@ export default function PlanificacionPage() {
       return;
     }
     toast.success(`Límite de ${b.category.name} actualizado`);
+    window.dispatchEvent(new Event("fintra:refresh"));
+    await load();
+  };
+
+  const createBudget = async () => {
+    const value = Number(budgetForm.limit.replace(",", "."));
+    if (!budgetForm.category) {
+      toast.error("Elige la categoría que quieres limitar");
+      return;
+    }
+    if (!Number.isFinite(value) || value <= 0) {
+      toast.error("Introduce un límite mayor que cero");
+      return;
+    }
+    setCreatingBudget(true);
+    const res = await api.post("/api/budgets", {
+      category: budgetForm.category,
+      limit_amount: value,
+      alert_threshold: 80,
+    });
+    setCreatingBudget(false);
+    if (!res.ok) {
+      console.error("[Planificación] error creando presupuesto:", res.error);
+      toast.error("No he podido crear el presupuesto");
+      return;
+    }
+    const cat = categories.find((c) => c._id === budgetForm.category);
+    console.log("[Planificación] presupuesto creado:", cat?.name, value);
+    toast.success(`Presupuesto de ${cat?.name || "la categoría"} fijado en ${money(value)}`);
+    setBudgetForm({ category: "", limit: "" });
     window.dispatchEvent(new Event("fintra:refresh"));
     await load();
   };
@@ -210,6 +253,10 @@ export default function PlanificacionPage() {
     );
   }
 
+  /** Categorías de gasto que todavía no tienen límite este mes */
+  const budgetedIds = new Set(data.budgets.map((b) => b.category?._id).filter(Boolean));
+  const availableForBudget = categories.filter((c) => c.kind === "gasto" && !budgetedIds.has(c._id));
+
   return (
     <AppShell>
       <PageHeader
@@ -276,13 +323,67 @@ export default function PlanificacionPage() {
                 ))}
                 {data.budgets.length === 0 && (
                   <li className="text-sm text-muted-foreground">
-                    Todavía no hay presupuestos este mes. Pídeselo al asistente por voz o crea uno desde una categoría.
+                    Todavía no tienes límites este mes. Crea el primero en «Nuevo presupuesto», aquí al lado, o
+                    pídeselo al asistente por voz.
                   </li>
                 )}
               </ul>
             </Card>
 
             <div className="space-y-4">
+              <Card className="rounded-3xl p-6">
+                <h3 className="mb-1 font-display text-lg">Nuevo presupuesto</h3>
+                <p className="mb-5 text-xs text-muted-foreground">
+                  Elige una categoría de gasto y el máximo que quieres gastar en ella este mes.
+                </p>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="budget-category">Categoría</Label>
+                    <Select
+                      value={budgetForm.category}
+                      onValueChange={(v) => setBudgetForm({ ...budgetForm, category: v })}
+                    >
+                      <SelectTrigger id="budget-category" className="mt-1.5 w-full rounded-xl">
+                        <SelectValue placeholder={availableForBudget.length ? "Elegir categoría" : "Todas tienen límite"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableForBudget.map((c) => (
+                          <SelectItem key={c._id} value={c._id}>
+                            {c.emoji} {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="budget-limit">Límite del mes (€)</Label>
+                    <Input
+                      id="budget-limit"
+                      inputMode="decimal"
+                      value={budgetForm.limit}
+                      onChange={(e) => setBudgetForm({ ...budgetForm, limit: e.target.value })}
+                      placeholder="250"
+                      className="mt-1.5 rounded-xl"
+                    />
+                  </div>
+                  <Button
+                    className="w-full rounded-full"
+                    onClick={createBudget}
+                    disabled={creatingBudget || availableForBudget.length === 0}
+                  >
+                    {creatingBudget ? "Guardando…" : (
+                      <>
+                        <Plus className="mr-2 h-4 w-4" /> Crear presupuesto
+                      </>
+                    )}
+                  </Button>
+                  {availableForBudget.length === 0 && categories.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Ya tienes un límite en todas tus categorías de gasto. Edítalos en la lista de la izquierda.
+                    </p>
+                  )}
+                </div>
+              </Card>
               <Card className="rounded-3xl border-primary/30 bg-primary/[0.06] p-6">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                   Máximo diario recomendado

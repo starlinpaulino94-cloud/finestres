@@ -117,30 +117,44 @@ export function daysInMonth(date: Date): number {
 }
 
 /** ------------------------------------------------------------------
- * Default categories used when a user starts using the app
+ * Catálogo de categorías inicial. Es ESTRUCTURA, no datos de ejemplo:
+ * ningún importe, ningún movimiento. El usuario puede editarlas y añadir
+ * las suyas desde Planificación.
  * ------------------------------------------------------------------ */
 export const DEFAULT_CATEGORIES: {
   name: string;
   kind: "gasto" | "ingreso";
   color: string;
   emoji: string;
-  budget?: number;
 }[] = [
-  { name: "Supermercado", kind: "gasto", color: "#4ade80", emoji: "🛒", budget: 320 },
-  { name: "Restaurantes y salidas", kind: "gasto", color: "#f97316", emoji: "🍽️", budget: 220 },
-  { name: "Transporte", kind: "gasto", color: "#38bdf8", emoji: "🚇", budget: 90 },
-  { name: "Vivienda", kind: "gasto", color: "#a78bfa", emoji: "🏠", budget: 750 },
-  { name: "Ocio y suscripciones", kind: "gasto", color: "#f472b6", emoji: "🎬", budget: 80 },
-  { name: "Salud", kind: "gasto", color: "#2dd4bf", emoji: "💊", budget: 60 },
-  { name: "Compras", kind: "gasto", color: "#fbbf24", emoji: "🛍️", budget: 120 },
+  { name: "Vivienda", kind: "gasto", color: "#a78bfa", emoji: "🏠" },
+  { name: "Supermercado", kind: "gasto", color: "#4ade80", emoji: "🛒" },
+  { name: "Restaurantes y salidas", kind: "gasto", color: "#f97316", emoji: "🍽️" },
+  { name: "Transporte", kind: "gasto", color: "#38bdf8", emoji: "🚇" },
+  { name: "Servicios y facturas", kind: "gasto", color: "#60a5fa", emoji: "💡" },
+  { name: "Suscripciones", kind: "gasto", color: "#f472b6", emoji: "🎬" },
+  { name: "Salud", kind: "gasto", color: "#2dd4bf", emoji: "💊" },
+  { name: "Compras", kind: "gasto", color: "#fbbf24", emoji: "🛍️" },
+  { name: "Ocio", kind: "gasto", color: "#c084fc", emoji: "🎉" },
+  { name: "Educación", kind: "gasto", color: "#818cf8", emoji: "📚" },
+  { name: "Viajes", kind: "gasto", color: "#22d3ee", emoji: "✈️" },
+  { name: "Familia", kind: "gasto", color: "#fb7185", emoji: "👨‍👩‍👧" },
+  { name: "Seguros", kind: "gasto", color: "#94a3b8", emoji: "🛡️" },
+  { name: "Impuestos", kind: "gasto", color: "#a3a3a3", emoji: "🧾" },
+  { name: "Mascotas", kind: "gasto", color: "#facc15", emoji: "🐾" },
+  { name: "Otros gastos", kind: "gasto", color: "#cbd5e1", emoji: "❔" },
   { name: "Nómina", kind: "ingreso", color: "#22c55e", emoji: "💼" },
-  { name: "Ingresos extra", kind: "ingreso", color: "#84cc16", emoji: "✨" },
+  { name: "Trabajos y facturas", kind: "ingreso", color: "#16a34a", emoji: "🧑‍💻" },
+  { name: "Otros ingresos", kind: "ingreso", color: "#84cc16", emoji: "✨" },
 ];
 
 /** ------------------------------------------------------------------
- * Bootstrap: creates categories, accounts, budgets and a realistic
- * starting history so the user never sees an empty dashboard.
- * Idempotent — it only runs when the user has no categories yet.
+ * Preparación de una cuenta nueva.
+ *
+ * Crea ÚNICAMENTE el catálogo de categorías y un aviso de bienvenida.
+ * No crea movimientos, cuentas, presupuestos, metas ni salidas: todos los
+ * datos financieros son del usuario y los introduce él (a mano o por voz).
+ * Idempotente: sólo actúa si el usuario todavía no tiene categorías.
  * ------------------------------------------------------------------ */
 export async function bootstrapUserData(userId: string): Promise<{ created: boolean }> {
   const existing = await totalumSdk.crud.query("category", {
@@ -149,198 +163,32 @@ export async function bootstrapUserData(userId: string): Promise<{ created: bool
   });
 
   if ((existing.data as any[])?.length > 0) {
-    console.log("[finance] bootstrap skipped, user already has data:", userId);
+    console.log("[finance] categorías ya creadas, no hay nada que preparar:", userId);
     return { created: false };
   }
 
-  console.log("[finance] bootstrapping starter data for user:", userId);
+  console.log("[finance] preparando el catálogo de categorías para:", userId);
 
-  const categoryIds: Record<string, string> = {};
   for (const cat of DEFAULT_CATEGORIES) {
-    const res = await totalumSdk.crud.createRecord("category", {
+    await totalumSdk.crud.createRecord("category", {
       name: cat.name,
       kind: cat.kind,
       color: cat.color,
       emoji: cat.emoji,
       user: userId,
     });
-    categoryIds[cat.name] = (res.data as any)._id;
   }
-
-  const accounts = [
-    { name: "Cuenta corriente", bank_name: "BBVA", account_type: "cuenta", last_four: "4821", balance: 2480.55 },
-    { name: "Tarjeta Visa", bank_name: "Santander", account_type: "tarjeta_credito", last_four: "9037", balance: -310.2 },
-    { name: "Efectivo", bank_name: "Cartera", account_type: "efectivo", last_four: "", balance: 120 },
-  ];
-  const accountIds: string[] = [];
-  for (const acc of accounts) {
-    const res = await totalumSdk.crud.createRecord("bank_account", {
-      ...acc,
-      currency: "EUR",
-      user: userId,
-    });
-    accountIds.push((res.data as any)._id);
-  }
-
-  const now = new Date();
-  const currentMonth = monthKey(now);
-  for (const cat of DEFAULT_CATEGORIES) {
-    if (!cat.budget) continue;
-    await totalumSdk.crud.createRecord("budget", {
-      month: currentMonth,
-      limit_amount: cat.budget,
-      alert_threshold: 80,
-      category: categoryIds[cat.name],
-      user: userId,
-    });
-  }
-
-  // Deterministic pseudo-random generator so the seed history looks natural
-  let seed = 7;
-  const rnd = () => {
-    seed = (seed * 1103515245 + 12345) % 2147483648;
-    return seed / 2147483648;
-  };
-
-  const expenseTemplates = [
-    { concept: "Compra semanal Mercadona", category: "Supermercado", min: 28, max: 74 },
-    { concept: "Café con leche", category: "Restaurantes y salidas", min: 2, max: 5 },
-    { concept: "Cena con amigos", category: "Restaurantes y salidas", min: 18, max: 46 },
-    { concept: "Abono transporte", category: "Transporte", min: 12, max: 35 },
-    { concept: "Netflix + Spotify", category: "Ocio y suscripciones", min: 9, max: 22 },
-    { concept: "Farmacia", category: "Salud", min: 6, max: 28 },
-    { concept: "Zapatillas nuevas", category: "Compras", min: 20, max: 65 },
-    { concept: "Cine", category: "Ocio y suscripciones", min: 8, max: 16 },
-  ];
-
-  const transactions: any[] = [];
-  for (let monthOffset = 3; monthOffset >= 0; monthOffset--) {
-    const base = addMonths(now, -monthOffset);
-    const monthDays = monthOffset === 0 ? now.getDate() : daysInMonth(base);
-
-    // Rent + salary every month
-    transactions.push({
-      concept: "Alquiler del piso",
-      amount: 720,
-      kind: "gasto",
-      spent_at: new Date(base.getFullYear(), base.getMonth(), 2, 9, 30),
-      source: "manual",
-      auto_categorized: "no",
-      category: categoryIds["Vivienda"],
-      bank_account: accountIds[0],
-      user: userId,
-    });
-    transactions.push({
-      concept: "Nómina mensual",
-      amount: 2150,
-      kind: "ingreso",
-      spent_at: new Date(base.getFullYear(), base.getMonth(), 1, 8, 0),
-      source: "manual",
-      auto_categorized: "no",
-      category: categoryIds["Nómina"],
-      bank_account: accountIds[0],
-      user: userId,
-    });
-
-    // Movimientos internos: demuestran que un pago de tarjeta o un traspaso
-    // entre cuentas propias NO se contabiliza como gasto.
-    transactions.push({
-      concept: "Pago de la tarjeta Visa",
-      amount: 240,
-      kind: "pago_tarjeta",
-      spent_at: new Date(base.getFullYear(), base.getMonth(), 5, 12, 0),
-      source: "manual",
-      auto_categorized: "no",
-      bank_account: accountIds[0],
-      transfer_account: accountIds[1],
-      user: userId,
-    });
-    transactions.push({
-      concept: "Retirada de efectivo en el cajero",
-      amount: 100,
-      kind: "transferencia",
-      spent_at: new Date(base.getFullYear(), base.getMonth(), 3, 12, 30),
-      source: "manual",
-      auto_categorized: "no",
-      bank_account: accountIds[0],
-      transfer_account: accountIds[2],
-      user: userId,
-    });
-
-    const count = 9 + Math.floor(rnd() * 4);
-    for (let i = 0; i < count; i++) {
-      const tpl = expenseTemplates[Math.floor(rnd() * expenseTemplates.length)];
-      const day = 1 + Math.floor(rnd() * Math.max(monthDays - 1, 1));
-      transactions.push({
-        concept: tpl.concept,
-        amount: Math.round((tpl.min + rnd() * (tpl.max - tpl.min)) * 100) / 100,
-        kind: "gasto",
-        spent_at: new Date(base.getFullYear(), base.getMonth(), day, 10 + Math.floor(rnd() * 11), 15),
-        source: rnd() > 0.45 ? "voz" : "manual",
-        auto_categorized: rnd() > 0.4 ? "yes" : "no",
-        category: categoryIds[tpl.category],
-        bank_account: accountIds[Math.floor(rnd() * accountIds.length)],
-        user: userId,
-      });
-    }
-  }
-
-  for (const tx of transactions) {
-    await totalumSdk.crud.createRecord("transaction", tx);
-  }
-
-  await totalumSdk.crud.createRecord("savings_goal", {
-    title: "Viaje a Japón",
-    target_amount: 3000,
-    saved_amount: 850,
-    monthly_contribution: 180,
-    deadline: new Date(now.getFullYear() + 1, 3, 1),
-    status: "activa",
-    notes: "Vuelos + 12 noches. Reservar con antelación en temporada baja.",
-    user: userId,
-  });
-  await totalumSdk.crud.createRecord("savings_goal", {
-    title: "Colchón de emergencia",
-    target_amount: 6000,
-    saved_amount: 2100,
-    monthly_contribution: 250,
-    deadline: new Date(now.getFullYear() + 1, 11, 31),
-    status: "activa",
-    notes: "Objetivo: 3 meses de gastos fijos.",
-    user: userId,
-  });
-
-  await totalumSdk.crud.createRecord("outing_plan", {
-    title: "Cena de cumpleaños de Marta",
-    planned_at: new Date(now.getFullYear(), now.getMonth(), Math.min(now.getDate() + 4, 28), 21, 0),
-    estimated_cost: 55,
-    max_recommended: 45,
-    ai_advice:
-      "Con tu ritmo de gasto actual puedes permitirte 45 € en esta cena. Si eliges menú cerrado y pagas en efectivo te será más fácil no pasarte.",
-    status: "planificada",
-    user: userId,
-  });
-  await totalumSdk.crud.createRecord("outing_plan", {
-    title: "Escapada de fin de semana",
-    planned_at: new Date(now.getFullYear(), now.getMonth() + 1, 8, 10, 0),
-    estimated_cost: 210,
-    max_recommended: 165,
-    ai_advice:
-      "Reserva alojamiento antes de fin de mes y reparte el gasto entre dos meses para no comprometer tu meta de ahorro.",
-    status: "planificada",
-    user: userId,
-  });
 
   await totalumSdk.crud.createRecord("notification", {
     title: "Bienvenido a Fintra",
     message:
-      "He preparado tus categorías, presupuestos y un historial de ejemplo. Mándame una nota de voz para registrar tus gastos del día.",
+      "Tu cuenta está vacía y lista para tus datos reales. Empieza por añadir tus cuentas con su saldo actual y registra tu primer movimiento a mano o con una nota de voz. Después define tus presupuestos y tus metas de ahorro.",
     severity: "info",
     is_read: "no",
     user: userId,
   });
 
-  console.log("[finance] bootstrap complete for user:", userId, "transactions:", transactions.length);
+  console.log("[finance] catálogo listo:", DEFAULT_CATEGORIES.length, "categorías para", userId);
   return { created: true };
 }
 

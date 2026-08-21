@@ -7,6 +7,8 @@ import {
   ArrowUpRight,
   BellRing,
   CalendarClock,
+  Check,
+  ChevronRight,
   HeartPulse,
   Info,
   Landmark,
@@ -86,6 +88,91 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="space-y-5">
+          {/* Primeros pasos: sólo mientras falte algo por configurar */}
+          {(() => {
+            const steps = [
+              {
+                done: data.accounts.length > 0,
+                title: "Añade tus cuentas y tarjetas",
+                hint: "Con su saldo actual, para saber de cuánto dinero dispones de verdad.",
+                href: "/cuentas",
+                cta: "Ir a cuentas",
+              },
+              {
+                done: data.recentTransactions.length > 0,
+                title: "Registra tu primer movimiento",
+                hint: "A mano en un segundo, o dictando una nota de voz al asistente.",
+                href: "/movimientos",
+                cta: "Añadir movimiento",
+              },
+              {
+                done: data.budgets.length > 0,
+                title: "Pon límites a tus categorías",
+                hint: "Te avisamos automáticamente al llegar al 80 % de cada límite.",
+                href: "/planificacion",
+                cta: "Crear presupuesto",
+              },
+              {
+                done: data.goals.length > 0,
+                title: "Define una meta de ahorro",
+                hint: "Calculamos el aporte mensual que necesitas para conseguirla.",
+                href: "/planificacion",
+                cta: "Crear meta",
+              },
+            ];
+            const pending = steps.filter((s) => !s.done);
+            if (pending.length === 0) return null;
+            return (
+              <Card className="rise rounded-3xl border-primary/30 bg-primary/[0.05] p-6">
+                <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h2 className="font-display text-xl">Primeros pasos</h2>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Tu cuenta está lista para tus datos reales. Completa estos pasos y el panel se llenará solo.
+                    </p>
+                  </div>
+                  <span className="tabular text-xs text-muted-foreground">
+                    {steps.length - pending.length} de {steps.length} completados
+                  </span>
+                </div>
+                <ul className="grid gap-3 sm:grid-cols-2">
+                  {steps.map((step) => (
+                    <li
+                      key={step.title}
+                      className={`flex items-start gap-3 rounded-2xl border p-4 ${
+                        step.done ? "border-border bg-muted/30" : "border-primary/25 bg-background"
+                      }`}
+                    >
+                      <span
+                        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
+                          step.done
+                            ? "bg-primary text-primary-foreground"
+                            : "border border-primary/40 text-primary"
+                        }`}
+                      >
+                        {step.done ? <Check className="h-3.5 w-3.5" /> : steps.indexOf(step) + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-sm font-medium ${step.done ? "text-muted-foreground line-through" : ""}`}>
+                          {step.title}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{step.hint}</p>
+                        {!step.done && (
+                          <Link
+                            href={step.href}
+                            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                          >
+                            {step.cta} <ChevronRight className="h-3.5 w-3.5" />
+                          </Link>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            );
+          })()}
+
           {/* KPIs */}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Card className="rise rounded-3xl border-primary/30 bg-primary/[0.07] p-6">
@@ -273,6 +360,12 @@ export default function DashboardPage() {
                   <HeartPulse className="h-4 w-4 text-primary" />
                   <h2 className="font-display text-xl">Salud financiera</h2>
                 </div>
+                {data.income === 0 && data.expense === 0 && data.accounts.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Todavía no puedo puntuar tu salud financiera: necesito tus cuentas y algún movimiento para
+                    medir tu ahorro, tu colchón y tu deuda.
+                  </p>
+                ) : (
                 <div className="flex items-center gap-5">
                   <ScoreRing score={data.healthScore} label="salud" />
                   <ul className="flex-1 space-y-2">
@@ -290,6 +383,7 @@ export default function DashboardPage() {
                     ))}
                   </ul>
                 </div>
+                )}
               </Card>
 
               <Card className="rise rounded-3xl p-6 [animation-delay:120ms]">
@@ -338,7 +432,11 @@ export default function DashboardPage() {
                 ))}
                 {data.goals.length === 0 && (
                   <li className="text-sm text-muted-foreground">
-                    Cuéntale tus metas al asistente y las organizará por ti.
+                    Aún no tienes metas de ahorro.{" "}
+                    <Link href="/planificacion" className="text-primary underline underline-offset-4">
+                      Crea la primera
+                    </Link>{" "}
+                    o cuéntasela al asistente por voz.
                   </li>
                 )}
               </ul>
@@ -409,7 +507,13 @@ export default function DashboardPage() {
                   );
                 })}
                 {data.recentTransactions.length === 0 && (
-                  <li className="py-3 text-sm text-muted-foreground">Sin movimientos todavía.</li>
+                  <li className="py-3 text-sm text-muted-foreground">
+                    Sin movimientos todavía.{" "}
+                    <Link href="/movimientos" className="text-primary underline underline-offset-4">
+                      Añade el primero
+                    </Link>
+                    .
+                  </li>
                 )}
               </ul>
             </Card>
