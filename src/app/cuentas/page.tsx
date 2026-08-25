@@ -123,7 +123,7 @@ export default function CuentasPage() {
         action={
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button className="rounded-full">
+              <Button className="h-11 w-full rounded-full sm:w-auto sm:px-6">
                 <Plus className="mr-2 h-4 w-4" /> Añadir cuenta
               </Button>
             </DialogTrigger>
@@ -274,7 +274,7 @@ export default function CuentasPage() {
                   {editing !== a._id && (
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1.5 text-primary transition-opacity hover:opacity-80"
+                      className="-my-1.5 inline-flex min-h-8 items-center gap-1.5 rounded-full px-2 py-1.5 text-primary transition-colors hover:bg-primary/10 active:bg-primary/15"
                       onClick={() => {
                         setEditing(a._id);
                         setEditValue(String(a.balance ?? 0).replace(".", ","));

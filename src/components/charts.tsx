@@ -1,6 +1,28 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+/**
+ * Ancho real en píxeles del contenedor. Los SVG usan `viewBox`, así que al
+ * encogerse en un móvil el texto se encoge con ellos y queda ilegible: con
+ * esta medida compensamos el tamaño de fuente para que siempre se lea.
+ */
+function useRenderedWidth<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setWidth(el.getBoundingClientRect().width);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return { ref, width };
+}
 
 function money(value: number) {
   return `${(value || 0).toLocaleString("es-ES", { maximumFractionDigits: 0 })} €`;
@@ -14,9 +36,17 @@ export function MoneyFlowChart({
 }: {
   data: { label: string; income: number; expense: number }[];
 }) {
-  const W = 720;
-  const H = 240;
-  const P = { top: 18, right: 12, bottom: 26, left: 44 };
+  const { ref, width: rendered } = useRenderedWidth<HTMLDivElement>();
+  const compact = rendered > 0 && rendered < 520;
+
+  // En móvil usamos un lienzo más estrecho: así el gráfico conserva altura
+  // útil en vez de quedar aplastado al escalarse a un ancho de teléfono.
+  const W = compact ? 420 : 720;
+  const H = compact ? 250 : 240;
+  // Factor de compensación: cuánto se encoge el SVG respecto a su viewBox.
+  const k = rendered > 0 ? Math.min(Math.max(W / rendered, 1), 2.6) : 1;
+  const fs = (size: number) => +(size * k).toFixed(1);
+  const P = { top: 18, right: 12, bottom: compact ? 34 : 26, left: compact ? 30 + 26 * k : 44 };
 
   const max = Math.max(...data.map((d) => Math.max(d.income, d.expense)), 100);
   const step = data.length > 1 ? (W - P.left - P.right) / (data.length - 1) : 0;
@@ -29,10 +59,12 @@ export function MoneyFlowChart({
     `${line(key)} L${x(data.length - 1).toFixed(1)},${H - P.bottom} L${x(0).toFixed(1)},${H - P.bottom} Z`;
 
   const ticks = [0, 0.5, 1].map((t) => Math.round(max * t));
+  // Con la fuente agrandada las etiquetas chocan: dejamos solo las que caben.
+  const labelEvery = compact ? Math.max(1, Math.ceil((data.length * fs(11) * 3.4) / W)) : 1;
 
   return (
-    <div className="w-full">
-      <div className="flex items-center gap-5 mb-3 text-xs text-muted-foreground">
+    <div className="w-full" ref={ref}>
+      <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-2">
           <span className="h-2 w-4 rounded-full" style={{ background: "var(--chart-1)" }} /> Ingresos
         </span>
@@ -40,7 +72,7 @@ export function MoneyFlowChart({
           <span className="h-2 w-4 rounded-full" style={{ background: "var(--chart-5)" }} /> Gastos
         </span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[240px]" role="img" aria-label="Evolución mensual de ingresos y gastos">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="Evolución mensual de ingresos y gastos">
         <defs>
           <linearGradient id="gradIncome" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--chart-1)" stopOpacity="0.32" />
@@ -63,7 +95,14 @@ export function MoneyFlowChart({
               strokeOpacity="0.12"
               strokeDasharray="3 5"
             />
-            <text x={8} y={y(t) + 4} className="tabular" fontSize="10" fill="currentColor" opacity="0.5">
+            <text
+              x={4}
+              y={y(t) + fs(4)}
+              className="tabular"
+              fontSize={fs(10)}
+              fill="currentColor"
+              opacity="0.55"
+            >
               {money(t)}
             </text>
           </g>
@@ -74,22 +113,27 @@ export function MoneyFlowChart({
         <path d={line("income")} fill="none" stroke="var(--chart-1)" strokeWidth="2.5" strokeLinecap="round" />
         <path d={line("expense")} fill="none" stroke="var(--chart-5)" strokeWidth="2.5" strokeLinecap="round" />
 
-        {data.map((d, i) => (
-          <g key={d.label + i}>
-            <circle cx={x(i)} cy={y(d.income)} r="3.5" fill="var(--chart-1)" />
-            <circle cx={x(i)} cy={y(d.expense)} r="3.5" fill="var(--chart-5)" />
-            <text
-              x={x(i)}
-              y={H - 8}
-              fontSize="11"
-              textAnchor="middle"
-              fill="currentColor"
-              opacity="0.6"
-            >
-              {d.label}
-            </text>
-          </g>
-        ))}
+        {data.map((d, i) => {
+          const showLabel = i % labelEvery === 0 || i === data.length - 1;
+          return (
+            <g key={d.label + i}>
+              <circle cx={x(i)} cy={y(d.income)} r={Math.min(3.5 * k, 6)} fill="var(--chart-1)" />
+              <circle cx={x(i)} cy={y(d.expense)} r={Math.min(3.5 * k, 6)} fill="var(--chart-5)" />
+              {showLabel && (
+                <text
+                  x={x(i)}
+                  y={H - fs(8)}
+                  fontSize={fs(11)}
+                  textAnchor={i === 0 ? "start" : i === data.length - 1 ? "end" : "middle"}
+                  fill="currentColor"
+                  opacity="0.65"
+                >
+                  {d.label}
+                </text>
+              )}
+            </g>
+          );
+        })}
       </svg>
     </div>
   );
@@ -120,8 +164,8 @@ export function CategoryDonut({
   }, [data, total, C]);
 
   return (
-    <div className="flex flex-col sm:flex-row items-center gap-7">
-      <svg viewBox="0 0 200 200" className="w-[190px] h-[190px] shrink-0 -rotate-90">
+    <div className="flex flex-col items-center gap-5 sm:flex-row sm:gap-7">
+      <svg viewBox="0 0 200 200" className="h-[160px] w-[160px] shrink-0 -rotate-90 sm:h-[190px] sm:w-[190px]">
         <circle cx="100" cy="100" r={R} fill="none" stroke="currentColor" strokeOpacity="0.09" strokeWidth={STROKE} />
         {segments.map((s) => (
           <circle
@@ -149,7 +193,7 @@ export function CategoryDonut({
               {s.emoji} {s.name}
             </span>
             <span className="tabular text-muted-foreground">{(s.fraction * 100).toFixed(0)}%</span>
-            <span className="tabular font-medium w-20 text-right">{money(s.amount)}</span>
+            <span className="tabular w-[4.5rem] shrink-0 text-right font-medium sm:w-20">{money(s.amount)}</span>
           </li>
         ))}
       </ul>
@@ -162,24 +206,49 @@ export function CategoryDonut({
  * ------------------------------------------------------------------------- */
 export function DailyBars({ data }: { data: { day: string; amount: number }[] }) {
   const max = Math.max(...data.map((d) => d.amount), 1);
+  // En móvil no hay hover. Además, un tooltip flotante por barra ensanchaba el
+  // layout y empujaba las tarjetas fuera de la pantalla: mostramos el detalle
+  // en una línea fija que se actualiza al tocar (o pasar el ratón por) la barra.
+  const [active, setActive] = useState<string | null>(null);
+  const current = data.find((d) => d.day === active);
+
   return (
-    <div className="flex items-end gap-[3px] h-[110px]">
-      {data.map((d) => (
-        <div key={d.day} className="group relative flex-1 flex items-end h-full">
-          <div
-            className="w-full rounded-t-[3px] transition-all duration-300 group-hover:opacity-100"
-            style={{
-              height: `${Math.max((d.amount / max) * 100, d.amount > 0 ? 4 : 1.5)}%`,
-              background:
-                d.amount > 0 ? "color-mix(in oklch, var(--chart-1) 78%, transparent)" : "currentColor",
-              opacity: d.amount > 0 ? 0.9 : 0.12,
-            }}
-          />
-          <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[10px] tabular opacity-0 shadow-lg ring-1 ring-border transition-opacity group-hover:opacity-100">
-            día {d.day}: {money(d.amount)}
+    <div>
+      <p className="mb-2 h-5 text-xs text-muted-foreground">
+        {current ? (
+          <span className="text-foreground">
+            Día {current.day} · <span className="tabular font-medium">{money(current.amount)}</span>
           </span>
-        </div>
-      ))}
+        ) : (
+          "Toca una barra para ver el gasto del día"
+        )}
+      </p>
+      <div className="flex h-[110px] items-end gap-[3px]">
+        {data.map((d) => {
+          const open = active === d.day;
+          return (
+            <button
+              key={d.day}
+              type="button"
+              onClick={() => setActive(open ? null : d.day)}
+              onMouseEnter={() => setActive(d.day)}
+              onMouseLeave={() => setActive((cur) => (cur === d.day ? null : cur))}
+              aria-label={`Día ${d.day}: ${money(d.amount)}`}
+              className="flex h-full min-w-0 flex-1 items-end outline-none"
+            >
+              <span
+                className="w-full rounded-t-[3px] transition-all duration-300"
+                style={{
+                  height: `${Math.max((d.amount / max) * 100, d.amount > 0 ? 4 : 1.5)}%`,
+                  background:
+                    d.amount > 0 ? "color-mix(in oklch, var(--chart-1) 78%, transparent)" : "currentColor",
+                  opacity: open ? 1 : d.amount > 0 ? 0.9 : 0.12,
+                }}
+              />
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

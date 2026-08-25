@@ -266,20 +266,23 @@ export default function PlanificacionPage() {
       />
 
       <Tabs defaultValue="presupuestos" className="rise">
-        <TabsList className="mb-6 rounded-full">
-          <TabsTrigger value="presupuestos" className="rounded-full">
-            <Wallet className="mr-2 h-4 w-4" /> Presupuestos
-          </TabsTrigger>
-          <TabsTrigger value="metas" className="rounded-full">
-            <PiggyBank className="mr-2 h-4 w-4" /> Metas
-          </TabsTrigger>
-          <TabsTrigger value="salidas" className="rounded-full">
-            <CalendarClock className="mr-2 h-4 w-4" /> Salidas
-          </TabsTrigger>
-          <TabsTrigger value="simulador" className="rounded-full">
-            <Calculator className="mr-2 h-4 w-4" /> Simulador
-          </TabsTrigger>
-        </TabsList>
+        {/* En móvil las 4 pestañas no caben: se deslizan en horizontal. */}
+        <div className="scroll-x -mx-4 mb-6 px-4 sm:mx-0 sm:px-0">
+          <TabsList className="h-auto w-max rounded-full p-1">
+            <TabsTrigger value="presupuestos" className="flex-none shrink-0 rounded-full px-3.5 py-2">
+              <Wallet className="mr-2 h-4 w-4" /> Presupuestos
+            </TabsTrigger>
+            <TabsTrigger value="metas" className="flex-none shrink-0 rounded-full px-3.5 py-2">
+              <PiggyBank className="mr-2 h-4 w-4" /> Metas
+            </TabsTrigger>
+            <TabsTrigger value="salidas" className="flex-none shrink-0 rounded-full px-3.5 py-2">
+              <CalendarClock className="mr-2 h-4 w-4" /> Salidas
+            </TabsTrigger>
+            <TabsTrigger value="simulador" className="flex-none shrink-0 rounded-full px-3.5 py-2">
+              <Calculator className="mr-2 h-4 w-4" /> Simulador
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* ---------------- Presupuestos ---------------- */}
         <TabsContent value="presupuestos">

@@ -184,11 +184,11 @@ export default function AsistentePage() {
                 onChange={(e) => setText(e.target.value)}
                 placeholder="Hoy gasté 12 € en el súper y 4,50 en un café…"
                 rows={3}
-                className="rounded-2xl"
+                className="min-h-24 rounded-2xl text-base"
               />
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button
-                  className="rounded-full"
+                  className="h-11 w-full rounded-full sm:w-auto sm:px-6"
                   disabled={processing || !text.trim()}
                   onClick={() => send({ text: text.trim() })}
                 >
@@ -198,7 +198,7 @@ export default function AsistentePage() {
                   <button
                     key={i}
                     onClick={() => setText(ex)}
-                    className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+                    className="min-h-9 rounded-full border border-border px-3.5 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground active:bg-accent/60"
                   >
                     Ejemplo {i + 1}
                   </button>
