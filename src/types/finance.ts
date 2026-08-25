@@ -19,6 +19,8 @@ export interface Category {
   kind: Kind;
   color?: string;
   emoji?: string;
+  /** Idempotencia de creaciones confirmadas por el asistente */
+  assistant_action_id?: string;
 }
 
 export interface BankAccount {
@@ -29,6 +31,10 @@ export interface BankAccount {
   last_four?: string;
   balance?: number;
   currency?: string;
+  /** Momento del último saldo real confirmado (snapshot del ledger) */
+  balance_as_of?: string;
+  /** Idempotencia de creaciones confirmadas por el asistente */
+  assistant_action_id?: string;
 }
 
 export interface Transaction {
@@ -45,6 +51,11 @@ export interface Transaction {
   bank_account?: BankAccount | string | null;
   /** Cuenta destino en transferencias y pagos de tarjeta */
   transfer_account?: BankAccount | string | null;
+  /** Momento desde el que el movimiento afecta al saldo derivado */
+  balance_effective_at?: string;
+  /** Idempotencia de creaciones confirmadas por el asistente */
+  assistant_action_id?: string;
+  voice_note?: VoiceNote | string | null;
   createdAt?: string;
 }
 
@@ -54,6 +65,8 @@ export interface Budget {
   limit_amount: number;
   alert_threshold?: number;
   category?: Category | string | null;
+  /** Idempotencia de creaciones confirmadas por el asistente */
+  assistant_action_id?: string;
 }
 
 export interface BudgetProgress {
@@ -75,6 +88,9 @@ export interface SavingsGoal {
   deadline?: string;
   status?: "activa" | "pausada" | "completada";
   notes?: string;
+  /** Idempotencia de creaciones confirmadas por el asistente */
+  assistant_action_id?: string;
+  voice_note?: VoiceNote | string | null;
 }
 
 export interface OutingPlan {
@@ -86,6 +102,9 @@ export interface OutingPlan {
   real_cost?: number;
   ai_advice?: string;
   status?: "planificada" | "realizada" | "cancelada";
+  /** Idempotencia de creaciones confirmadas por el asistente */
+  assistant_action_id?: string;
+  voice_note?: VoiceNote | string | null;
 }
 
 export interface AppNotification {
@@ -97,12 +116,23 @@ export interface AppNotification {
   createdAt?: string;
 }
 
+/** Estados del ciclo de vida de una nota de voz (incluye `error` por compatibilidad histórica) */
+export type VoiceNoteStatus =
+  | "pendiente_confirmacion"
+  | "procesando"
+  | "procesada"
+  | "error_confirmacion"
+  | "cancelada"
+  | "error";
+
 export interface VoiceNote {
   _id: string;
   title?: string;
   transcription?: string;
   ai_summary?: string;
-  status?: "procesada" | "error";
+  /** Sobre JSON del plan, acciones completadas y resultados del reintento */
+  ai_result?: unknown;
+  status?: VoiceNoteStatus;
   createdAt?: string;
   audio_file?: { name: string; url?: string } | null;
 }
