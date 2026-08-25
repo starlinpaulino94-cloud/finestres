@@ -1,6 +1,6 @@
 // src/app/layout.tsx
 import React from "react";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Manrope, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { ScriptExecutor } from "@/components/ScriptExecutor";
@@ -31,6 +31,21 @@ export const metadata: Metadata = {
   title: "Fintra · Tu copiloto financiero",
   description:
     "Controla tus finanzas personales con un asistente de IA al que le mandas notas de voz: gastos, presupuestos, metas de ahorro, alertas e informes semanales.",
+  // Permite instalar Fintra en la pantalla de inicio del móvil como una app.
+  appleWebApp: { capable: true, title: "Fintra", statusBarStyle: "black-translucent" },
+  formatDetection: { telephone: false },
+};
+
+// Sin esto el móvil renderiza a 980px y muestra la app "alejada" y con zoom.
+// `viewportFit: cover` permite usar env(safe-area-inset-*) en el notch y la barra de gestos.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0d1117" },
+  ],
 };
 
 // SUPER IMPORTANT: NOT EDIT THE FOLLOWING 2 LINES TO FORCE NEXT.JS TO RENDER DYNAMICALLY
@@ -50,7 +65,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="min-h-screen flex flex-col">
             <main className="flex-1">{children}</main>
           </div>
-          <Toaster position="top-right" richColors />
+          <Toaster position="top-center" richColors closeButton className="sm:!right-4 sm:!left-auto" />
         </ThemeProvider>
       </body>
     </html>

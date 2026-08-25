@@ -81,7 +81,7 @@ export default function DashboardPage() {
       />
 
       {loading || !data ? (
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 [&>*]:min-w-0 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-40 rounded-3xl" />
           ))}
@@ -174,7 +174,7 @@ export default function DashboardPage() {
           })()}
 
           {/* KPIs */}
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 [&>*]:min-w-0 sm:grid-cols-2 xl:grid-cols-4">
             <Card className="rise rounded-3xl border-primary/30 bg-primary/[0.07] p-6">
               <div className="flex items-start justify-between">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
@@ -183,13 +183,13 @@ export default function DashboardPage() {
                 <Popover>
                   <PopoverTrigger asChild>
                     <button
-                      className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-primary transition-colors hover:bg-primary/10"
+                      className="flex min-h-8 items-center gap-1 rounded-full px-2.5 py-1.5 text-[11px] text-primary transition-colors hover:bg-primary/10 active:bg-primary/15"
                       aria-label="Ver cómo se calcula el disponible para gastar"
                     >
                       <Info className="h-3.5 w-3.5" /> Cómo lo calculo
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-80 rounded-2xl" align="end">
+                  <PopoverContent className="w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl" align="end" sideOffset={8}>
                     <p className="text-sm font-medium">No es el saldo de tu banco</p>
                     <p className="mt-1 text-xs text-muted-foreground">
                       Partimos de tu dinero líquido y restamos lo que ya está comprometido:
@@ -302,7 +302,7 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+          <div className="grid gap-4 [&>*]:min-w-0 xl:grid-cols-[1fr_1fr]">
             {/* Presupuestos */}
             <Card className="rise rounded-3xl p-6">
               <div className="mb-5 flex items-center justify-between">
@@ -366,9 +366,11 @@ export default function DashboardPage() {
                     medir tu ahorro, tu colchón y tu deuda.
                   </p>
                 ) : (
-                <div className="flex items-center gap-5">
+                // En móvil el anillo (136px fijos) y el detalle no caben en fila:
+                // se apilan para que la tarjeta no desborde la pantalla.
+                <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-center">
                   <ScoreRing score={data.healthScore} label="salud" />
-                  <ul className="flex-1 space-y-2">
+                  <ul className="w-full min-w-0 flex-1 space-y-2">
                     {data.healthComponents.map((c) => (
                       <li key={c.key}>
                         <div className="flex items-baseline justify-between gap-2 text-xs">
@@ -407,7 +409,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Metas, salidas y movimientos */}
-          <div className="grid gap-4 xl:grid-cols-3">
+          <div className="grid gap-4 [&>*]:min-w-0 xl:grid-cols-3">
             <Card className="rise rounded-3xl p-6">
               <div className="mb-5 flex items-center gap-2">
                 <PiggyBank className="h-4 w-4 text-primary" />

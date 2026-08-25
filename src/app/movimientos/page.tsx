@@ -180,7 +180,7 @@ export default function MovimientosPage() {
           <div className="flex flex-wrap gap-2">
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
-                <Button className="rounded-full">
+                <Button className="h-11 w-full rounded-full sm:w-auto sm:px-6">
                   <Plus className="mr-2 h-4 w-4" /> Nuevo movimiento
                 </Button>
               </DialogTrigger>
