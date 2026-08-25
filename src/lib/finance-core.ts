@@ -9,6 +9,8 @@
  *   3) todo sea testeable con `npm run test:finance`.
  */
 
+import { BASE_CURRENCY, amountToBase, exchangeRateToBase, formatBaseCurrency, normalizeCurrency } from "./currency";
+
 /* ------------------------------------------------------------------ *
  * Tipos de movimiento
  * ------------------------------------------------------------------ */
@@ -138,6 +140,7 @@ export function clamp(value: number, min: number, max: number): number {
 
 export interface AmountRow {
   amount?: number | null;
+  amount_base?: number | null;
   kind?: string | null;
 }
 
@@ -151,9 +154,10 @@ export interface Totals {
 }
 
 export function computeTotals(rows: AmountRow[]): Totals {
-  const income = sumMoney(rows.filter((r) => isIncome(r.kind)).map((r) => r.amount));
-  const expense = sumMoney(rows.filter((r) => isExpense(r.kind)).map((r) => r.amount));
-  const internal = sumMoney(rows.filter((r) => isInternal(r.kind)).map((r) => r.amount));
+  const amount = (row: AmountRow) => row.amount_base ?? row.amount;
+  const income = sumMoney(rows.filter((r) => isIncome(r.kind)).map(amount));
+  const expense = sumMoney(rows.filter((r) => isExpense(r.kind)).map(amount));
+  const internal = sumMoney(rows.filter((r) => isInternal(r.kind)).map(amount));
   return { income, expense, internal, net: round2(income - expense) };
 }
 
@@ -167,7 +171,7 @@ export function spentByCategory(rows: CategorizedRow[]): Record<string, number> 
   for (const row of rows) {
     if (!isExpense(row.kind)) continue;
     const key = row.categoryId || "sin-categoria";
-    out[key] = round2((out[key] || 0) + round2(row.amount));
+    out[key] = round2((out[key] || 0) + round2(row.amount_base ?? row.amount));
   }
   return out;
 }
@@ -181,6 +185,82 @@ export interface AccountLike {
   name?: string;
   account_type?: string | null;
   balance?: number | null;
+  currency?: string | null;
+  exchange_rate_to_base?: number | null;
+  balance_base?: number | null;
+  /** Momento en que `balance` fue confirmado como snapshot real. */
+  balance_as_of?: string | Date | null;
+}
+
+export interface AccountMovementLike {
+  amount?: number | null;
+  currency?: string | null;
+  exchange_rate_to_base?: number | null;
+  amount_base?: number | null;
+  kind?: string | null;
+  bank_account?: string | { _id?: string } | null;
+  transfer_account?: string | { _id?: string } | null;
+  createdAt?: string | Date | null;
+  balance_effective_at?: string | Date | null;
+}
+
+function relatedId(value: AccountMovementLike["bank_account"]): string | null {
+  if (typeof value === "string") return value;
+  return value && typeof value === "object" && value._id ? String(value._id) : null;
+}
+
+/**
+ * Deriva el saldo actual desde el último snapshot confirmado. Al no escribir
+ * saldos por cada movimiento, crear/editar/eliminar sigue siendo reversible y
+ * no depende de una transacción multi-registro que Totalum no ofrece.
+ */
+export function deriveAccountBalances<T extends AccountLike>(
+  accounts: T[],
+  movements: AccountMovementLike[]
+): T[] {
+  const accountCurrencies = new Map(accounts.map((account) => [account._id, normalizeCurrency(account.currency)]));
+  return accounts.map((account) => {
+    const accountCurrency = normalizeCurrency(account.currency);
+    const rate = exchangeRateToBase(accountCurrency, account.exchange_rate_to_base);
+    const asOf = account.balance_as_of ? new Date(account.balance_as_of).getTime() : Number.NaN;
+    if (!account._id || Number.isNaN(asOf)) {
+      const balance = round2(account.balance);
+      return {
+        ...account,
+        currency: accountCurrency,
+        exchange_rate_to_base: rate,
+        balance_base: amountToBase(balance, accountCurrency, rate),
+      };
+    }
+    let balance = round2(account.balance);
+    for (const movement of movements) {
+      const effectiveValue = movement.balance_effective_at || movement.createdAt;
+      if (!effectiveValue) continue;
+      const effectiveAt = new Date(effectiveValue).getTime();
+      if (Number.isNaN(effectiveAt) || effectiveAt <= asOf) continue;
+      const amount = round2(movement.amount);
+      const origin = relatedId(movement.bank_account);
+      const destination = relatedId(movement.transfer_account);
+      const movementCurrency = normalizeCurrency(
+        movement.currency || accountCurrencies.get(origin || "") || accountCurrencies.get(destination || "") || BASE_CURRENCY
+      );
+      const meta = kindMeta(movement.kind);
+      if (origin === account._id && movementCurrency === accountCurrency) {
+        if (meta.expense || meta.needsDestination) balance = round2(balance - amount);
+        else if (meta.income) balance = round2(balance + amount);
+      }
+      if (meta.needsDestination && destination === account._id && movementCurrency === accountCurrency) {
+        balance = round2(balance + amount);
+      }
+    }
+    return {
+      ...account,
+      balance,
+      currency: accountCurrency,
+      exchange_rate_to_base: rate,
+      balance_base: amountToBase(balance, accountCurrency, rate),
+    };
+  });
 }
 
 export function isCreditCard(account: AccountLike): boolean {
@@ -200,7 +280,10 @@ export interface NetWorth {
 }
 
 export function computeNetWorth(accounts: AccountLike[]): NetWorth {
-  const balances = accounts.map((a) => ({ account: a, balance: round2(a.balance) }));
+  const balances = accounts.map((a) => ({
+    account: a,
+    balance: round2(a.balance_base ?? amountToBase(a.balance, a.currency, a.exchange_rate_to_base)),
+  }));
   const assets = sumMoney(balances.filter((b) => b.balance > 0).map((b) => b.balance));
   const liabilities = sumMoney(balances.filter((b) => b.balance < 0).map((b) => -b.balance));
   const liquidity = sumMoney(
@@ -393,7 +476,7 @@ export function computeSafeToSpend(input: SafeToSpendInput): SafeToSpend {
       label: "Reserva para tus metas",
       amount: goalReserve,
       sign: "−",
-      hint: `Parte proporcional de los ${round2(monthlyGoalReserve)} € al mes que aportas a tus metas activas.`,
+      hint: `Parte proporcional de los ${formatBaseCurrency(round2(monthlyGoalReserve))} al mes que aportas a tus metas activas.`,
     });
   }
   if (outingsCost > 0) {
@@ -458,12 +541,12 @@ export function simulatePurchase(amount: number, safe: SafeToSpend): PurchaseSim
 
   if (remaining >= 0) {
     impacts.push(
-      `Te quedarían ${remaining.toFixed(2)} € disponibles ${safe.horizonLabel} (${round2(
+      `Te quedarían ${formatBaseCurrency(remaining)} disponibles ${safe.horizonLabel} (${formatBaseCurrency(round2(
         remaining / safe.horizonDays
-      ).toFixed(2)} € al día).`
+      ))} al día).`
     );
   } else {
-    impacts.push(`Te faltan ${Math.abs(remaining).toFixed(2)} € para poder pagarla sin tocar tus reservas.`);
+    impacts.push(`Te faltan ${formatBaseCurrency(Math.abs(remaining))} para poder pagarla sin tocar tus reservas.`);
   }
   if (safe.budgetCapApplied) {
     impacts.push("Tu límite lo marca el presupuesto del mes, no la falta de dinero en cuenta.");
@@ -562,7 +645,7 @@ export function computeHealthScore(input: HealthInput): HealthScore {
       max: 20,
       detail:
         cardDebt > 0
-          ? `Debes ${round2(cardDebt).toFixed(2)} € de tarjeta, un ${Math.round(debtRatio * 100)} % de tus ingresos.`
+          ? `Debes ${formatBaseCurrency(round2(cardDebt))} de tarjeta, un ${Math.round(debtRatio * 100)} % de tus ingresos.`
           : "No tienes deuda de tarjeta pendiente.",
     },
   ];

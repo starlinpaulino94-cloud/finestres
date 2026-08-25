@@ -31,6 +31,8 @@ export interface BankAccount {
   last_four?: string;
   balance?: number;
   currency?: string;
+  exchange_rate_to_base?: number;
+  balance_base?: number;
   /** Momento del último saldo real confirmado (snapshot del ledger) */
   balance_as_of?: string;
   /** Idempotencia de creaciones confirmadas por el asistente */
@@ -41,6 +43,9 @@ export interface Transaction {
   _id: string;
   concept: string;
   amount: number;
+  amount_base?: number;
+  currency?: string;
+  exchange_rate_to_base?: number;
   /** gasto | ingreso | transferencia | pago_tarjeta | ajuste */
   kind: TxKind;
   spent_at: string;

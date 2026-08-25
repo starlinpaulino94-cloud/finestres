@@ -8,6 +8,7 @@ import {
   serializeError,
 } from "@/lib/finance";
 import { computeTotals, isExpense } from "@/lib/finance-core";
+import { BASE_CURRENCY, amountToBase, normalizeCurrency } from "@/lib/currency";
 import { weeklyEmailHtml, weeklyReportHtml } from "@/lib/report-html";
 
 /** Generates the detailed weekly report (AI + PDF) and optionally emails it */
@@ -32,6 +33,7 @@ export async function POST(req: Request) {
         _sort: { spent_at: "desc" },
         _limit: 500,
         category: true,
+        bank_account: true,
       }),
       buildDashboard(user.id),
     ]);
@@ -41,16 +43,23 @@ export async function POST(req: Request) {
     const prevWeek = all.filter((t) => new Date(t.spent_at) < start);
 
     // Transferencias, pagos de tarjeta y ajustes NO son gasto ni ingreso
-    const weekTotals = computeTotals(week);
+    const baseAmount = (t: any) => {
+      const account = typeof t.bank_account === "object" && t.bank_account ? t.bank_account : null;
+      const currency = normalizeCurrency(t.currency || account?.currency || BASE_CURRENCY);
+      return t.amount_base ?? amountToBase(t.amount || 0, currency, t.exchange_rate_to_base ?? account?.exchange_rate_to_base);
+    };
+    const weekBaseRows = week.map((t) => ({ ...t, amount: baseAmount(t) }));
+    const prevWeekBaseRows = prevWeek.map((t) => ({ ...t, amount: baseAmount(t) }));
+    const weekTotals = computeTotals(weekBaseRows);
     const totalSpent = weekTotals.expense;
     const totalIncome = weekTotals.income;
-    const prevSpent = computeTotals(prevWeek).expense;
+    const prevSpent = computeTotals(prevWeekBaseRows).expense;
 
     const catMap = new Map<string, number>();
     for (const t of week) {
       if (!isExpense(t.kind)) continue;
       const name = (typeof t.category === "object" && t.category ? t.category.name : null) || "Sin categoría";
-      catMap.set(name, (catMap.get(name) || 0) + (t.amount || 0));
+      catMap.set(name, (catMap.get(name) || 0) + baseAmount(t));
     }
     const categories = [...catMap.entries()]
       .map(([name, amount]) => ({ name, amount, pct: totalSpent > 0 ? (amount / totalSpent) * 100 : 0 }))
@@ -58,11 +67,11 @@ export async function POST(req: Request) {
 
     const topExpenses = week
       .filter((t) => isExpense(t.kind))
-      .sort((a, b) => (b.amount || 0) - (a.amount || 0))
+      .sort((a, b) => baseAmount(b) - baseAmount(a))
       .slice(0, 8)
       .map((t) => ({
         concept: t.concept,
-        amount: t.amount || 0,
+        amount: baseAmount(t),
         date: new Date(t.spent_at).toLocaleDateString("es-ES"),
         category: (typeof t.category === "object" && t.category ? t.category.name : null) || "Sin categoría",
       }));
@@ -91,12 +100,12 @@ Escribe un informe semanal en español con este formato exacto:
 ## Tus metas de ahorro
 (1-2 bullets sobre el progreso y si va en camino)
 ## Plan para la próxima semana
-(3 bullets accionables, cada uno con una cifra objetivo en euros)
+(3 bullets accionables, cada uno con una cifra objetivo en DOP)
 ## Máximo recomendado para tus salidas
 (1-2 frases con cifras concretas)`;
 
     const content = await askAi(
-      "Eres un asesor financiero personal español. Escribes informes claros, honestos y muy accionables, siempre con cifras concretas en euros. No inventas datos que no estén en el contexto.",
+      "Eres un asesor financiero personal español. Escribes informes claros, honestos y muy accionables, siempre con cifras concretas en DOP. No inventas datos que no estén en el contexto.",
       prompt,
       { maxTokens: 1100, temperature: 0.5 }
     );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { formatBaseCurrency } from "@/lib/currency";
 
 /**
  * Ancho real en píxeles del contenedor. Los SVG usan `viewBox`, así que al
@@ -23,9 +24,8 @@ function useRenderedWidth<T extends HTMLElement>() {
 
   return { ref, width };
 }
-
 function money(value: number) {
-  return `${(value || 0).toLocaleString("es-ES", { maximumFractionDigits: 0 })} €`;
+  return formatBaseCurrency(value);
 }
 
 /* ---------------------------------------------------------------------------
@@ -154,13 +154,13 @@ export function CategoryDonut({
   const C = 2 * Math.PI * R;
 
   const segments = useMemo(() => {
-    let offset = 0;
-    return data.slice(0, 7).map((d) => {
+    return data.slice(0, 7).reduce<
+      Array<{ name: string; color: string; emoji: string; amount: number; fraction: number; dash: number; offset: number }>
+    >((acc, d) => {
       const fraction = total > 0 ? d.amount / total : 0;
-      const seg = { ...d, fraction, dash: fraction * C, offset };
-      offset += fraction * C;
-      return seg;
-    });
+      const offset = acc.reduce((sum, segment) => sum + segment.dash, 0);
+      return [...acc, { ...d, fraction, dash: fraction * C, offset }];
+    }, []);
   }, [data, total, C]);
 
   return (

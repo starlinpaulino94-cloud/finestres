@@ -65,7 +65,7 @@ const FEATURES = [
 ];
 
 const STEPS = [
-  { n: "01", title: "Grabas una nota de voz", text: "«Hoy gasté 14 € en comida y 6 en metro. El sábado salgo a cenar.»" },
+  { n: "01", title: "Grabas una nota de voz", text: "«Hoy gasté RD$ 850 en comida y RD$ 300 en transporte. El sábado salgo a cenar.»" },
   { n: "02", title: "La IA lo organiza", text: "Crea los movimientos, los categoriza, ajusta tu presupuesto y planifica la salida." },
   { n: "03", title: "Recibes el plan", text: "Máximo diario, alertas de límite y un informe semanal con acciones concretas." },
 ];
@@ -132,7 +132,7 @@ export default function Main() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Puedes gastar hoy</p>
-                    <p className="tabular mt-1 text-4xl font-semibold text-primary">28,40 €</p>
+                    <p className="tabular mt-1 text-4xl font-semibold text-primary">RD$ 1,650</p>
                   </div>
                   <div className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/15">
                     <Wallet className="h-6 w-6 text-primary" />
@@ -141,9 +141,9 @@ export default function Main() {
 
                 <div className="mt-6 space-y-3.5">
                   {[
-                    { name: "🛒 Supermercado", pct: 62, value: "198 / 320 €" },
-                    { name: "🍽️ Restaurantes y salidas", pct: 88, value: "194 / 220 €" },
-                    { name: "🚇 Transporte", pct: 34, value: "31 / 90 €" },
+                    { name: "🛒 Supermercado", pct: 62, value: "RD$ 11,800 / 19,000" },
+                    { name: "🍽️ Restaurantes y salidas", pct: 88, value: "RD$ 10,600 / 12,000" },
+                    { name: "🚇 Transporte", pct: 34, value: "RD$ 1,900 / 5,500" },
                   ].map((row) => (
                     <div key={row.name}>
                       <div className="mb-1.5 flex items-center justify-between text-xs">
@@ -168,7 +168,7 @@ export default function Main() {
                     <Mic className="h-3.5 w-3.5" /> Tu asistente
                   </p>
                   <p className="text-sm leading-relaxed">
-                    «El sábado puedes gastar hasta <strong>45 €</strong> en la cena. Si te pasas, tu meta del viaje se
+                    «El sábado puedes gastar hasta <strong>RD$ 2,700</strong> en la cena. Si te pasas, tu meta del viaje se
                     retrasa 3 semanas.»
                   </p>
                 </div>

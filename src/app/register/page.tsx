@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { signUp } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useRouter } from "next/navigation";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -52,8 +52,8 @@ export default function RegisterPage() {
         return;
       }
 
-      // Use window.location for a full page reload to ensure session cookie is picked up
-      window.location.href = "/dashboard";
+      router.push("/dashboard");
+      router.refresh();
     } catch (err: any) {
       console.error("Registration error:", err);
       setError(err.message || "No he podido crear la cuenta. Puede que ese correo ya esté registrado.");

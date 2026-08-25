@@ -1,14 +1,22 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { totalumSdk } from "@/lib/totalum";
-import { getSessionUser, monthKey, monthLabel, serializeError } from "@/lib/finance";
+import { getSessionUser, monthKey, monthLabel, queryAllRecords, serializeError } from "@/lib/finance";
 import { computeTotals, kindMeta } from "@/lib/finance-core";
+import { BASE_CURRENCY, amountToBase, normalizeCurrency } from "@/lib/currency";
 import { statementHtml } from "@/lib/report-html";
 
 const schema = z.object({
   format: z.enum(["pdf", "excel"]),
-  month: z.string().optional(),
-});
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
+}).strict();
+
+function csvCell(value: unknown): string {
+  let text = String(value ?? "");
+  // Evita que Excel interprete datos controlados por el usuario como fórmulas.
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
 
 /** Exports the movements of a month as a PDF statement or an Excel (CSV) file */
 export async function POST(req: Request) {
@@ -27,53 +35,59 @@ export async function POST(req: Request) {
     const start = new Date(year, m - 1, 1, 0, 0, 0);
     const end = new Date(year, m, 0, 23, 59, 59);
 
-    const txRes = await totalumSdk.crud.query("transaction", {
+    const transactionRows = await queryAllRecords("transaction", {
       _filter: { user: user.id, spent_at: { gte: start.toISOString(), lte: end.toISOString() } },
       _sort: { spent_at: "desc" },
-      _limit: 1000,
       category: true,
       bank_account: true,
     });
 
-    const rows = ((txRes.data as any[]) || []).map((t) => ({
+    const rows = transactionRows.map((t) => {
+      const account = typeof t.bank_account === "object" && t.bank_account ? t.bank_account : null;
+      const currency = normalizeCurrency(t.currency || account?.currency || BASE_CURRENCY);
+      const amountBase = t.amount_base ?? amountToBase(t.amount || 0, currency, t.exchange_rate_to_base ?? account?.exchange_rate_to_base);
+      return {
       date: new Date(t.spent_at).toLocaleDateString("es-ES"),
       concept: t.concept || "",
       category: (typeof t.category === "object" && t.category ? t.category.name : null) || "Sin categoría",
-      account: (typeof t.bank_account === "object" && t.bank_account ? t.bank_account.name : null) || "—",
+      account: account?.name || "—",
       kind: kindMeta(t.kind).label,
       sign: kindMeta(t.kind).sign,
       rawKind: t.kind || "gasto",
       amount: t.amount || 0,
+      amountBase,
+      currency,
       source: t.source || "manual",
-    }));
+    };
+    });
 
     // Los movimientos internos aparecen en el listado pero no en los totales
-    const totals = computeTotals(rows.map((r) => ({ amount: r.amount, kind: r.rawKind })));
+    const totals = computeTotals(rows.map((r) => ({ amount: r.amountBase, kind: r.rawKind })));
     const totalSpent = totals.expense;
     const totalIncome = totals.income;
     const periodLabel = monthLabel(month);
 
     if (parsed.data.format === "excel") {
-      const header = ["Fecha", "Concepto", "Categoría", "Cuenta", "Tipo", "Origen", "Importe (€)"];
-      const csvRows = rows.map((r) =>
-        [
+      const header = ["Fecha", "Concepto", "Categoría", "Cuenta", "Tipo", "Origen", "Importe", "Moneda", "Importe DOP"];
+      const csvRows = rows.map((r) => [
           r.date,
-          r.concept.replace(/;/g, ","),
-          r.category.replace(/;/g, ","),
-          r.account.replace(/;/g, ","),
+          r.concept,
+          r.category,
+          r.account,
           r.kind,
           r.source,
           r.amount.toFixed(2).replace(".", ","),
-        ].join(";")
-      );
+          r.currency,
+          r.amountBase.toFixed(2).replace(".", ","),
+        ].map(csvCell).join(";"));
       const summary = [
         "",
-        `Total gastos;;;;;;${totalSpent.toFixed(2).replace(".", ",")}`,
-        `Total ingresos;;;;;;${totalIncome.toFixed(2).replace(".", ",")}`,
-        `Balance;;;;;;${(totalIncome - totalSpent).toFixed(2).replace(".", ",")}`,
+        ["Total gastos", "", "", "", "", "", "", BASE_CURRENCY, totalSpent.toFixed(2).replace(".", ",")].map(csvCell).join(";"),
+        ["Total ingresos", "", "", "", "", "", "", BASE_CURRENCY, totalIncome.toFixed(2).replace(".", ",")].map(csvCell).join(";"),
+        ["Balance", "", "", "", "", "", "", BASE_CURRENCY, (totalIncome - totalSpent).toFixed(2).replace(".", ",")].map(csvCell).join(";"),
       ];
       // BOM so Excel opens the accents correctly
-      const csv = "﻿" + [header.join(";"), ...csvRows, ...summary].join("\r\n");
+      const csv = "﻿" + [header.map(csvCell).join(";"), ...csvRows, ...summary].join("\r\n");
 
       console.log("[API] export excel:", month, rows.length, "movimientos");
       return NextResponse.json({

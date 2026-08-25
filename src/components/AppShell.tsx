@@ -16,7 +16,6 @@ import {
   Moon,
   Sun,
   Target,
-  UserRound,
   X,
 } from "lucide-react";
 import { signOut, useSession } from "@/lib/auth-client";
@@ -173,7 +172,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="flex-1 min-w-0 flex flex-col">
           {/* Cabecera */}
-          <header className="safe-top sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/85 px-4 py-3 backdrop-blur-xl sm:px-7">
+          <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/85 px-4 py-3 backdrop-blur-xl sm:px-7">
             <Link href="/dashboard" className="lg:hidden flex items-center gap-2">
               <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-primary-foreground font-display">
                 F
@@ -208,7 +207,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     )}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent align="end" sideOffset={8} className="w-[min(22rem,calc(100vw-1.5rem))] p-0">
+                <PopoverContent align="end" className="w-[350px] p-0">
                   <div className="flex items-center justify-between border-b border-border px-4 py-3">
                     <p className="text-sm font-medium">Alertas inteligentes</p>
                     {unread.length > 0 && (
@@ -217,7 +216,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       </button>
                     )}
                   </div>
-                  <ScrollArea className="max-h-[min(340px,60dvh)]">
+                  <ScrollArea className="max-h-[340px]">
                     {notifications.length === 0 && (
                       <p className="px-4 py-6 text-sm text-muted-foreground">Sin alertas por ahora.</p>
                     )}
@@ -251,13 +250,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Popover>
                 <PopoverTrigger asChild>
                   <button
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-secondary text-sm font-semibold"
+                    className="grid h-9 w-9 place-items-center rounded-full bg-secondary text-sm font-semibold"
                     aria-label="Mi cuenta"
                   >
                     {initials}
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="end" sideOffset={8} className="w-[min(16rem,calc(100vw-1.5rem))]">
+                <PopoverContent align="end" className="w-64">
                   <p className="text-sm font-medium">{session.user.name}</p>
                   <p className="mb-4 text-xs text-muted-foreground">{session.user.email}</p>
                   <div className="mb-3 flex items-center justify-between rounded-xl border border-border px-3 py-2">
@@ -266,17 +265,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </span>
                     <Switch checked={biometric} onCheckedChange={toggleBiometric} />
                   </div>
-                  <Button asChild variant="ghost" className="mb-2 h-11 w-full justify-start rounded-xl px-3">
-                    <Link href="/profile">
-                      <UserRound className="mr-2 h-4 w-4" /> Perfil y seguridad
-                    </Link>
-                  </Button>
                   <Button
                     variant="outline"
-                    className="h-11 w-full rounded-xl"
+                    className="w-full rounded-xl"
                     onClick={async () => {
                       await signOut();
-                      window.location.href = "/";
+                      router.push("/");
+                      router.refresh();
                     }}
                   >
                     <LogOut className="mr-2 h-4 w-4" /> Cerrar sesión
@@ -286,24 +281,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </header>
 
-          <div className="pb-mobile-nav flex-1 px-4 pt-6 sm:px-7">{children}</div>
+          <div className="flex-1 px-4 pb-28 pt-6 sm:px-7 lg:pb-12">{children}</div>
         </div>
 
         {/* Navegación móvil */}
-        <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-40 flex items-stretch justify-between gap-0.5 border-t border-border bg-background/95 px-1 pt-1.5 backdrop-blur-xl lg:hidden">
+        <nav className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-between gap-1 border-t border-border bg-background/95 px-2 py-2 backdrop-blur-xl lg:hidden">
           {NAV.map((item) => {
             const active = pathname === item.href;
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                aria-current={active ? "page" : undefined}
-                className={`flex min-h-11 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-0.5 py-1.5 text-[10px] leading-none transition-colors active:bg-accent/60 ${
-                  active ? "text-primary font-medium" : "text-muted-foreground"
+                className={`flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-[10px] ${
+                  active ? "text-primary" : "text-muted-foreground"
                 }`}
               >
-                <item.icon className={`h-5 w-5 ${active ? "" : "opacity-80"}`} />
-                <span className="w-full truncate text-center">{item.label}</span>
+                <item.icon className="h-4.5 w-4.5" />
+                {item.label}
               </Link>
             );
           })}
@@ -326,12 +320,12 @@ export function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-col gap-4 sm:mb-7 sm:flex-row sm:items-end sm:justify-between rise">
-      <div className="min-w-0">
+    <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between rise">
+      <div>
         {eyebrow && (
           <p className="mb-1.5 text-[11px] uppercase tracking-[0.2em] text-primary">{eyebrow}</p>
         )}
-        <h1 className="font-display text-2xl leading-tight sm:text-4xl">{title}</h1>
+        <h1 className="font-display text-3xl sm:text-4xl">{title}</h1>
         {description && <p className="mt-2 max-w-xl text-sm text-muted-foreground">{description}</p>}
       </div>
       {action}

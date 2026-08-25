@@ -90,7 +90,7 @@ class ConsoleLogger {
           if (typeof arg === 'object') {
             try {
               return JSON.stringify(arg, null, 2);
-            } catch (e) {
+            } catch {
               return String(arg);
             }
           }
@@ -112,7 +112,7 @@ class ConsoleLogger {
           this.parentOrigin
         );
       }
-    } catch (error) {
+    } catch {
       // Silently fail if can't send to parent
     }
   }
@@ -128,9 +128,13 @@ class ConsoleLogger {
       if (!referrer) return;
 
       const referrerOrigin = new URL(referrer).origin;
-
-      // In development, accept any parent origin
-      this.parentOrigin = referrerOrigin;
+      const allowedOrigins = new Set(
+        (process.env.NEXT_PUBLIC_EDITOR_ORIGINS || "")
+          .split(",")
+          .map((origin) => origin.trim())
+          .filter(Boolean)
+      );
+      if (allowedOrigins.has(referrerOrigin)) this.parentOrigin = referrerOrigin;
     } catch {
       // Silently fail if can't determine parent origin
     }
@@ -202,7 +206,12 @@ class ConsoleLogger {
     this.toggleMobileStyles(false);
 
     window.addEventListener('message', (event) => {
-      if (event.data?.type === 'toggle-mobile-mode') {
+      if (
+        this.parentOrigin &&
+        event.source === window.parent &&
+        event.origin === this.parentOrigin &&
+        event.data?.type === 'toggle-mobile-mode'
+      ) {
         this.toggleMobileStyles(event.data.isMobile);
       }
     });

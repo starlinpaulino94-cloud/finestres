@@ -131,7 +131,7 @@ export function weeklyReportHtml(params: {
   <h2>Análisis y plan de acción</h2>
   ${markdownishToHtml(params.content)}
 
-  <div class="footer">Informe generado automáticamente por el asistente de Fintra. Los importes están en euros.</div>
+  <div class="footer">Informe generado automáticamente por el asistente de Fintra. Los importes agregados están en DOP.</div>
   </body></html>`;
 }
 
@@ -150,6 +150,7 @@ export function statementHtml(params: {
     /** Signo con el que se muestra el importe: "+", "−" o "=" */
     sign: string;
     amount: number;
+    amountBase?: number;
   }[];
 }): string {
   return `<html><head><meta charset="utf-8" /><style>${baseStyles}</style></head><body>
@@ -174,7 +175,7 @@ export function statementHtml(params: {
               r.category
             )}</td><td>${escapeHtml(r.account)}</td><td>${escapeHtml(r.kind)}</td><td class="num">${
               r.sign
-            }${formatCurrency(r.amount)}</td></tr>`
+            }${formatCurrency(r.amountBase ?? r.amount)}</td></tr>`
         )
         .join("")}
     </tbody>

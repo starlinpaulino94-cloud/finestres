@@ -19,14 +19,11 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
+import { BASE_CURRENCY, formatBaseCurrency, formatCurrency } from "@/lib/currency";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
 import { TX_KINDS, computeTotals, kindMeta } from "@/lib/finance-core";
 import type { BankAccount, Category, Transaction } from "@/types/finance";
 import { toast } from "sonner";
-
-function money(v: number) {
-  return `${(v || 0).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-}
 
 const SOURCE_LABEL: Record<string, string> = {
   manual: "Manual",
@@ -58,6 +55,8 @@ export default function MovimientosPage() {
   });
 
   const formKind = kindMeta(form.kind);
+  const selectedAccount = accounts.find((account) => account._id === form.bank_account);
+  const selectedCurrency = selectedAccount?.currency || BASE_CURRENCY;
 
   const load = useCallback(async () => {
     const [tx, cats, accs] = await Promise.all([
@@ -92,7 +91,7 @@ export default function MovimientosPage() {
   }, [transactions, kindFilter, categoryFilter, search]);
 
   const totals = useMemo(() => {
-    const totals = computeTotals(filtered);
+    const totals = computeTotals(filtered.map((item) => ({ ...item, amount: item.amount_base ?? item.amount })));
     return { gasto: totals.expense, ingreso: totals.income, interno: totals.internal };
   }, [filtered]);
 
@@ -204,7 +203,7 @@ export default function MovimientosPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label htmlFor="amount">Importe (€)</Label>
+                      <Label htmlFor="amount">Importe ({selectedCurrency})</Label>
                       <Input
                         id="amount"
                         inputMode="decimal"
@@ -309,14 +308,29 @@ export default function MovimientosPage() {
                   <div className={formKind.needsDestination ? "grid grid-cols-2 gap-3" : ""}>
                     <div>
                       <Label>{formKind.needsDestination ? "Cuenta de origen" : "Cuenta"}</Label>
-                      <Select value={form.bank_account} onValueChange={(v) => setForm({ ...form, bank_account: v })}>
+                      <Select
+                        value={form.bank_account}
+                        onValueChange={(v) => {
+                          const nextAccount = accounts.find((account) => account._id === v);
+                          const nextCurrency = nextAccount?.currency || BASE_CURRENCY;
+                          const currentDestination = accounts.find((account) => account._id === form.transfer_account);
+                          setForm({
+                            ...form,
+                            bank_account: v,
+                            transfer_account:
+                              currentDestination && (currentDestination.currency || BASE_CURRENCY) === nextCurrency
+                                ? form.transfer_account
+                                : "",
+                          });
+                        }}
+                      >
                         <SelectTrigger className="mt-1.5 w-full">
                           <SelectValue placeholder="Elegir cuenta" />
                         </SelectTrigger>
                         <SelectContent>
                           {accounts.map((a) => (
                             <SelectItem key={a._id} value={a._id}>
-                              {a.name} {a.last_four ? `· ${a.last_four}` : ""}
+                              {a.name} · {a.currency || BASE_CURRENCY} {a.last_four ? `· ${a.last_four}` : ""}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -335,9 +349,10 @@ export default function MovimientosPage() {
                           <SelectContent>
                             {accounts
                               .filter((a) => a._id !== form.bank_account)
+                              .filter((a) => !form.bank_account || (a.currency || BASE_CURRENCY) === selectedCurrency)
                               .map((a) => (
                                 <SelectItem key={a._id} value={a._id}>
-                                  {a.name} {a.last_four ? `· ${a.last_four}` : ""}
+                                  {a.name} · {a.currency || BASE_CURRENCY} {a.last_four ? `· ${a.last_four}` : ""}
                                 </SelectItem>
                               ))}
                           </SelectContent>
@@ -398,12 +413,12 @@ export default function MovimientosPage() {
 
         <div className="mb-4 flex flex-wrap gap-6 text-sm">
           <p className="text-muted-foreground">
-            {filtered.length} movimientos · gastos <span className="tabular text-foreground">{money(totals.gasto)}</span>{" "}
-            · ingresos <span className="tabular text-primary">{money(totals.ingreso)}</span>
+            {filtered.length} movimientos · gastos <span className="tabular text-foreground">{formatBaseCurrency(totals.gasto)}</span>{" "}
+            · ingresos <span className="tabular text-primary">{formatBaseCurrency(totals.ingreso)}</span>
             {totals.interno > 0 && (
               <>
                 {" "}
-                · <span className="tabular">{money(totals.interno)}</span> movidos entre cuentas (ni gasto ni ingreso)
+                · <span className="tabular">{formatBaseCurrency(totals.interno)}</span> movidos entre cuentas (ni gasto ni ingreso)
               </>
             )}
           </p>
@@ -452,7 +467,7 @@ export default function MovimientosPage() {
                     }`}
                   >
                     {meta.sign}
-                    {money(t.amount)}
+                    {formatCurrency(t.amount, t.currency || acc?.currency || BASE_CURRENCY)}
                   </span>
                   <button
                     onClick={() => remove(t._id)}

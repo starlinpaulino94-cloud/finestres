@@ -33,7 +33,7 @@ function formatLog(level: string, args: any[]): string {
       if (typeof arg === 'object') {
         try {
           return JSON.stringify(arg);
-        } catch (e) {
+        } catch {
           return String(arg);
         }
       }
@@ -76,7 +76,7 @@ export function initBackendLogger() {
     console.log = (...args: any[]) => {
       try {
         originalLog(formatLog('INFO', args));
-      } catch (e) {
+      } catch {
         originalLog(...args);
       }
     };
@@ -87,7 +87,7 @@ export function initBackendLogger() {
     console.error = (...args: any[]) => {
       try {
         originalError(formatLog('ERROR', args));
-      } catch (e) {
+      } catch {
         originalError(...args);
       }
     };
@@ -98,7 +98,7 @@ export function initBackendLogger() {
     console.warn = (...args: any[]) => {
       try {
         originalWarn(formatLog('WARN', args));
-      } catch (e) {
+      } catch {
         originalWarn(...args);
       }
     };
@@ -109,7 +109,7 @@ export function initBackendLogger() {
     console.info = (...args: any[]) => {
       try {
         originalInfo(formatLog('INFO', args));
-      } catch (e) {
+      } catch {
         originalInfo(...args);
       }
     };
@@ -120,7 +120,7 @@ export function initBackendLogger() {
       process.on('uncaughtException', (error: Error, origin: string) => {
         try {
           console.error('🔥 UNCAUGHT EXCEPTION:', error.message, '\nOrigin:', origin, '\nStack:', error.stack);
-        } catch (e) {
+        } catch {
           originalError('UNCAUGHT EXCEPTION:', error);
         }
 
@@ -130,7 +130,7 @@ export function initBackendLogger() {
       process.on('unhandledRejection', (reason: any) => {
         try {
           console.error('🔥 UNHANDLED PROMISE REJECTION:', reason);
-        } catch (e) {
+        } catch {
           originalError('UNHANDLED PROMISE REJECTION:', reason);
         }
       });
@@ -139,7 +139,7 @@ export function initBackendLogger() {
       process.on('warning', (warning: Error) => {
         try {
           console.warn('⚠️ PROCESS WARNING:', warning.message);
-        } catch (e) {
+        } catch {
           originalWarn('PROCESS WARNING:', warning);
         }
       });

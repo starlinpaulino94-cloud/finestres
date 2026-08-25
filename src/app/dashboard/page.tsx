@@ -23,12 +23,13 @@ import { Card } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
+import { formatBaseCurrency } from "@/lib/currency";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
 import type { DashboardData } from "@/types/finance";
 import { toast } from "sonner";
 
 function money(v: number) {
-  return `${(v || 0).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+  return formatBaseCurrency(v);
 }
 
 export default function DashboardPage() {

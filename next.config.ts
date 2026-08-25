@@ -10,10 +10,6 @@ const nextConfig: NextConfig = {
       }
     ]
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  allowedDevOrigins: ["*"],
   async headers() {
     // Only cache-control headers here. CSP and CORS are handled exclusively in middleware.ts
     return [
@@ -30,7 +26,7 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  webpack: (config, { dev }) => {
+  ...(process.env.TOTALUM_SOURCE_TAGS !== "0" ? { webpack: (config: any, { dev }: { dev: boolean }) => {
     /**
      * ⭐⭐ SOURCE TAGS FOR THE VISUAL EDITOR — see scripts/totalum-source-tags.js.
      *
@@ -68,7 +64,7 @@ const nextConfig: NextConfig = {
       };
     }
     return config;
-  },
+  }} : {}),
 };
 
 export default nextConfig;

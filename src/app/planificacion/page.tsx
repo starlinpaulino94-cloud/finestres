@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
+import { formatBaseCurrency } from "@/lib/currency";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
 import type { BudgetProgress, Category, DashboardData, OutingPlan, SavingsGoal } from "@/types/finance";
 
@@ -39,7 +40,7 @@ const VERDICT_STYLE: Record<string, { label: string; className: string }> = {
 import { toast } from "sonner";
 
 function money(v: number) {
-  return `${(v || 0).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+  return formatBaseCurrency(v);
 }
 
 export default function PlanificacionPage() {
@@ -359,7 +360,7 @@ export default function PlanificacionPage() {
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="budget-limit">Límite del mes (€)</Label>
+                    <Label htmlFor="budget-limit">Límite del mes (DOP)</Label>
                     <Input
                       id="budget-limit"
                       inputMode="decimal"
@@ -467,7 +468,7 @@ export default function PlanificacionPage() {
                               onClick={() => addToGoal(g, amount)}
                               className="rounded-full border border-border px-2.5 py-1 transition-colors hover:border-primary/50 hover:text-foreground"
                             >
-                              +{amount} €
+                              +{money(amount)}
                             </button>
                           ))}
                         </div>
@@ -500,7 +501,7 @@ export default function PlanificacionPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label htmlFor="goal-target">Objetivo (€)</Label>
+                    <Label htmlFor="goal-target">Objetivo (DOP)</Label>
                     <Input
                       id="goal-target"
                       inputMode="decimal"
@@ -559,7 +560,7 @@ export default function PlanificacionPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label htmlFor="outing-cost">Coste estimado (€)</Label>
+                    <Label htmlFor="outing-cost">Coste estimado (DOP)</Label>
                     <Input
                       id="outing-cost"
                       inputMode="decimal"
@@ -669,7 +670,7 @@ export default function PlanificacionPage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="sim-amount">Importe (€)</Label>
+                  <Label htmlFor="sim-amount">Importe (DOP)</Label>
                   <Input
                     id="sim-amount"
                     inputMode="decimal"

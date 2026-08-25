@@ -1,9 +1,9 @@
 import "server-only";
 import { betterAuth } from "better-auth";
-import { bearer } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
 import { totalumAdapter } from "@/lib/better-auth-totalum-adapter";
 import { totalumSdk } from "@/lib/totalum";
+import { configuredTrustedOrigins, serverEnv } from "@/lib/env";
 
 // TESTING_MODE is set only by the test:serve script (npm run test:serve).
 // When active, use LOCAL_NEXTJS_PROJECT_TESTING_URL so that CORS, baseURL,
@@ -11,9 +11,23 @@ import { totalumSdk } from "@/lib/totalum";
 const effectiveUrl =
   process.env.TESTING_MODE === "true"
     ? (process.env.LOCAL_NEXTJS_PROJECT_TESTING_URL || "http://localhost:3000")
-    : (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
+    : serverEnv.NEXT_PUBLIC_APP_URL;
+
+const trustedOrigins = new Set(configuredTrustedOrigins());
 
 export const auth = betterAuth({
+  rateLimit: {
+    enabled: process.env.NODE_ENV === "production",
+    window: 60,
+    max: 60,
+    storage: "memory",
+    customRules: {
+      "/sign-in/email": { window: 60, max: 8 },
+      "/sign-up/email": { window: 300, max: 5 },
+      "/forget-password": { window: 300, max: 3 },
+    },
+  },
+
   // Database adapter
   database: totalumAdapter(totalumSdk, {
     debugLogs: true,
@@ -100,36 +114,22 @@ export const auth = betterAuth({
   },
 
   // Security
-  secret: process.env.BETTER_AUTH_SECRET,
+  secret: serverEnv.BETTER_AUTH_SECRET,
   baseURL: effectiveUrl,
   basePath: "/api/auth",
 
   // Trusted origins for CORS
   // Uses a dynamic function so both the default subdomain and custom domains
   // are trusted without needing a re-deploy after adding a custom domain.
-  trustedOrigins: (request: Request) => {
+  trustedOrigins: (request?: Request) => {
+    if (!request) return [...trustedOrigins];
     const origin = request.headers.get("origin");
     if (!origin) return [];
 
     // Development: trust any origin
     if (process.env.NODE_ENV !== "production") return [origin];
 
-    // Trust the configured app URL
-    if (process.env.NEXT_PUBLIC_APP_URL && origin === new URL(process.env.NEXT_PUBLIC_APP_URL).origin) {
-      return [origin];
-    }
-
-    // Trust testing URL (only when server is started via npm run test:serve)
-    if (process.env.TESTING_MODE === "true" && process.env.LOCAL_NEXTJS_PROJECT_TESTING_URL && origin === new URL(process.env.LOCAL_NEXTJS_PROJECT_TESTING_URL).origin) {
-      return [origin];
-    }
-
-    // Trust any *.totalum-project.com / *.webapp-project.com subdomain
-    if (/^https:\/\/[^/]+\.(totalum-project|webapp-project)\.com$/.test(origin)) return [origin];
-
-    // Trust same-host requests (custom domain served by this same worker)
-    const host = request.headers.get("host");
-    if (host && origin === `https://${host}`) return [origin];
+    if (trustedOrigins.has(origin)) return [origin];
 
     return [];
   },
@@ -175,7 +175,6 @@ export const auth = betterAuth({
 
   // Plugins
   plugins: [
-    bearer(), // Bearer token support for API clients
     nextCookies(), // Auto-set cookies in server actions (must be last)
   ],
 

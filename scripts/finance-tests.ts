@@ -12,6 +12,7 @@ import {
   computeNetWorth,
   computeSafeToSpend,
   computeTotals,
+  deriveAccountBalances,
   estimateNextIncomeDate,
   isExpense,
   isInternal,
@@ -20,6 +21,7 @@ import {
   spentByCategory,
   sumMoney,
 } from "../src/lib/finance-core";
+import { assistantPlanSchema } from "../src/lib/assistant-plan";
 
 let passed = 0;
 const failures: string[] = [];
@@ -89,6 +91,60 @@ eq("pasivos (incluye descubierto)", nw.liabilities, 350.2);
 eq("patrimonio neto = activos − pasivos", nw.netWorth, 2270.2);
 eq("la liquidez excluye la tarjeta de crédito", nw.liquidity, 2620.4);
 eq("deuda de tarjeta", nw.cardDebt, 310.2);
+
+const tracked = deriveAccountBalances(
+  [
+    { _id: "cash", balance: 1000, balance_as_of: "2026-08-20T10:00:00.000Z" },
+    { _id: "card", account_type: "tarjeta_credito", balance: -100, balance_as_of: "2026-08-20T10:00:00.000Z" },
+  ],
+  [
+    { amount: 50, kind: "gasto", bank_account: "cash", balance_effective_at: "2026-08-21T10:00:00.000Z" },
+    { amount: 200, kind: "ingreso", bank_account: "cash", balance_effective_at: "2026-08-22T10:00:00.000Z" },
+    { amount: 75, kind: "pago_tarjeta", bank_account: "cash", transfer_account: "card", balance_effective_at: "2026-08-23T10:00:00.000Z" },
+    { amount: 999, kind: "gasto", bank_account: "cash", balance_effective_at: "2026-08-19T10:00:00.000Z" },
+  ]
+);
+eq("el ledger deriva gastos, ingresos y transferencias posteriores", tracked[0].balance, 1075);
+eq("pagar tarjeta reduce la deuda", tracked[1].balance, -25);
+eq("un movimiento anterior al snapshot no se vuelve a contar", tracked[0].balance !== 76, true);
+const usdWorth = computeNetWorth([{ _id: "usd", balance: 10, currency: "USD", exchange_rate_to_base: 58.5 }]);
+eq("convierte saldos USD a DOP para patrimonio", usdWorth.assets, 585);
+const currencyTotals = computeTotals([{ amount: 10, amount_base: 585, kind: "gasto" }]);
+eq("usa amount_base DOP para totales multi-moneda", currencyTotals.expense, 585);
+
+console.log("\n== Plan seguro del asistente ==");
+eq(
+  "acepta un borrador de gasto válido",
+  assistantPlanSchema.safeParse({
+    resumen: "Compra",
+    consejo: "",
+    acciones: [{ type: "create_transaction", concept: "Café", amount: 2.5, kind: "gasto" }],
+  }).success,
+  true
+);
+eq(
+  "rechaza acciones desconocidas",
+  assistantPlanSchema.safeParse({ resumen: "", consejo: "", acciones: [{ type: "run_code", code: "x" }] }).success,
+  false
+);
+eq(
+  "rechaza campos extra que podrían eludir la confirmación",
+  assistantPlanSchema.safeParse({
+    resumen: "",
+    consejo: "",
+    acciones: [{ type: "create_account", name: "Cuenta", account_type: "cuenta", balance: 0, execute: true }],
+  }).success,
+  false
+);
+eq(
+  "permite saldos negativos de tarjeta",
+  assistantPlanSchema.safeParse({
+    resumen: "",
+    consejo: "",
+    acciones: [{ type: "create_account", name: "Visa", account_type: "tarjeta_credito", balance: -125 }],
+  }).success,
+  true
+);
 
 console.log("\n== Próximo ingreso ==");
 const today = new Date(2026, 7, 21); // 21 de agosto de 2026
