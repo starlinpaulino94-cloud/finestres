@@ -1,4 +1,4 @@
-# Adaptación de Fintra al móvil
+# Adaptación de Finestres al móvil
 
 Resumen de los cambios que hacen que la app se use con comodidad desde un teléfono.
 Verificado en un navegador real con viewport de 390×844 (iPhone 14/15).

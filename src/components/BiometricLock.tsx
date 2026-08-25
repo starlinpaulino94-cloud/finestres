@@ -5,6 +5,9 @@ import { Fingerprint, ShieldCheck, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
+// NO RENOMBRAR estas dos claves aunque la app se llame ahora Finestres: viven
+// en el localStorage del dispositivo del usuario. Cambiarlas dejaría huérfana
+// la credencial WebAuthn ya registrada y el bloqueo biométrico se apagaría solo.
 const CRED_KEY = "fintra:biometric-credential";
 const UNLOCK_KEY = "fintra:biometric-unlocked";
 
@@ -34,7 +37,7 @@ export async function enableBiometric(userId: string, userName: string) {
   const credential = (await navigator.credentials.create({
     publicKey: {
       challenge: randomChallenge(),
-      rp: { name: "Fintra" },
+      rp: { name: "Finestres" },
       user: {
         id: new TextEncoder().encode(userId),
         name: userName,

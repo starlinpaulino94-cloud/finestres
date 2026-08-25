@@ -18,15 +18,13 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCurrency } from "@/components/CurrencyProvider";
 import { api } from "@/lib/api";
+import { currencySymbol, normalizeCurrency, txCurrency } from "@/lib/currency";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
 import { TX_KINDS, computeTotals, kindMeta } from "@/lib/finance-core";
 import type { BankAccount, Category, Transaction } from "@/types/finance";
 import { toast } from "sonner";
-
-function money(v: number) {
-  return `${(v || 0).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-}
 
 const SOURCE_LABEL: Record<string, string> = {
   manual: "Manual",
@@ -34,6 +32,7 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 export default function MovimientosPage() {
+  const { money, toMain, mainCurrency } = useCurrency();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
@@ -91,10 +90,20 @@ export default function MovimientosPage() {
     });
   }, [transactions, kindFilter, categoryFilter, search]);
 
+  // Cada movimiento está en la moneda de su cuenta: para sumarlos se pasan
+  // todos a la moneda principal.
+  // El importe se teclea en la moneda de la cuenta elegida (o en la principal
+  // si el movimiento no va asociado a ninguna cuenta).
+  const formCurrency = normalizeCurrency(
+    accounts.find((a) => a._id === form.bank_account)?.currency || mainCurrency
+  );
+
   const totals = useMemo(() => {
-    const totals = computeTotals(filtered);
+    const totals = computeTotals(
+      filtered.map((t) => ({ ...t, amount: toMain(t.amount, txCurrency(t, mainCurrency)) }))
+    );
     return { gasto: totals.expense, ingreso: totals.income, interno: totals.internal };
-  }, [filtered]);
+  }, [filtered, toMain, mainCurrency]);
 
   /** Crea una categoría del mismo tipo que el movimiento en curso y la selecciona */
   const createCategory = async () => {
@@ -155,7 +164,7 @@ export default function MovimientosPage() {
     toast.success("Movimiento registrado");
     setOpen(false);
     setForm({ ...form, concept: "", amount: "" });
-    window.dispatchEvent(new Event("fintra:refresh"));
+    window.dispatchEvent(new Event("finestres:refresh"));
     await load();
   };
 
@@ -204,7 +213,7 @@ export default function MovimientosPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label htmlFor="amount">Importe (€)</Label>
+                      <Label htmlFor="amount">Importe ({currencySymbol(formCurrency)})</Label>
                       <Input
                         id="amount"
                         inputMode="decimal"
@@ -316,7 +325,8 @@ export default function MovimientosPage() {
                         <SelectContent>
                           {accounts.map((a) => (
                             <SelectItem key={a._id} value={a._id}>
-                              {a.name} {a.last_four ? `· ${a.last_four}` : ""}
+                              {a.name} {a.last_four ? `· ${a.last_four}` : ""} ·{" "}
+                              {normalizeCurrency(a.currency || mainCurrency)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -452,7 +462,7 @@ export default function MovimientosPage() {
                     }`}
                   >
                     {meta.sign}
-                    {money(t.amount)}
+                    {money(t.amount, txCurrency(t, mainCurrency))}
                   </span>
                   <button
                     onClick={() => remove(t._id)}

@@ -13,7 +13,7 @@ export async function GET() {
 
     const data = await buildDashboard(user.id);
     // Smart alerts: create notifications when budgets approach their limit
-    await refreshBudgetAlerts(user.id, data.budgets);
+    await refreshBudgetAlerts(user.id, data.budgets, data.currency);
     const fresh = await buildDashboard(user.id);
 
     console.log("[API] /api/dashboard ok", {

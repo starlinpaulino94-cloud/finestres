@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { totalumSdk } from "@/lib/totalum";
 import { getSessionUser, serializeError } from "@/lib/finance";
+import { getCurrencySettings } from "@/lib/user-currency";
+import { CURRENCY_CODES, normalizeCurrency } from "@/lib/currency";
 
 const schema = z.object({
   name: z.string().min(1),
@@ -9,6 +11,8 @@ const schema = z.object({
   account_type: z.enum(["cuenta", "tarjeta_credito", "tarjeta_debito", "efectivo"]),
   last_four: z.string().optional(),
   balance: z.number().optional(),
+  /** ISO 4217. Si no llega, se usa la moneda principal del usuario (DOP) */
+  currency: z.string().min(3).max(4).optional(),
 });
 
 export async function GET() {
@@ -39,13 +43,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: parsed.error.flatten() }, { status: 400 });
     }
 
+    const settings = await getCurrencySettings(user.id);
+    const currency = normalizeCurrency(parsed.data.currency || settings.mainCurrency);
+    if (!CURRENCY_CODES.includes(currency)) {
+      return NextResponse.json(
+        { ok: false, error: { message: `Moneda no soportada: ${currency}` } },
+        { status: 400 }
+      );
+    }
+
     const res = await totalumSdk.crud.createRecord("bank_account", {
       ...parsed.data,
       balance: parsed.data.balance ?? 0,
-      currency: "EUR",
+      currency,
       user: user.id,
     });
-    console.log("[API] cuenta creada:", (res.data as any)?._id, parsed.data.name);
+    console.log("[API] cuenta creada:", (res.data as any)?._id, parsed.data.name, currency);
     return NextResponse.json({ ok: true, data: res.data });
   } catch (err) {
     console.error("[API ERROR] POST /api/accounts", err);

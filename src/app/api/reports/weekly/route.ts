@@ -8,6 +8,7 @@ import {
   serializeError,
 } from "@/lib/finance";
 import { computeTotals, isExpense } from "@/lib/finance-core";
+import { convertAmount, txCurrency } from "@/lib/currency";
 import { weeklyEmailHtml, weeklyReportHtml } from "@/lib/report-html";
 
 /** Generates the detailed weekly report (AI + PDF) and optionally emails it */
@@ -32,11 +33,24 @@ export async function POST(req: Request) {
         _sort: { spent_at: "desc" },
         _limit: 500,
         category: true,
+        bank_account: true,
       }),
       buildDashboard(user.id),
     ]);
 
-    const all = ((txRes.data as any[]) || []);
+    // Cada movimiento viene en la moneda de su cuenta: se pasa todo a la
+    // moneda principal antes de sumar nada.
+    const currency = dashboard.currency;
+    const all = (((txRes.data as any[]) || [])).map((t) => ({
+      ...t,
+      amount: convertAmount(
+        t.amount || 0,
+        txCurrency(t, currency),
+        currency,
+        dashboard.exchangeRates,
+        currency
+      ),
+    }));
     const week = all.filter((t) => new Date(t.spent_at) >= start);
     const prevWeek = all.filter((t) => new Date(t.spent_at) < start);
 
@@ -70,18 +84,18 @@ export async function POST(req: Request) {
     const periodLabel = `${start.toLocaleDateString("es-ES")} — ${end.toLocaleDateString("es-ES")}`;
 
     const prompt = `Semana analizada: ${periodLabel}
-- Total gastado: ${formatCurrency(totalSpent)} (semana anterior: ${formatCurrency(prevSpent)})
-- Total ingresado: ${formatCurrency(totalIncome)}
-- Reparto por categoría: ${categories.map((c) => `${c.name} ${formatCurrency(c.amount)} (${c.pct.toFixed(0)}%)`).join("; ") || "sin gastos"}
-- Mayores gastos: ${topExpenses.map((t) => `${t.concept} ${formatCurrency(t.amount)}`).join("; ") || "ninguno"}
-- Presupuesto mensual: ${formatCurrency(dashboard.budgetTotal)}, gastado ${formatCurrency(dashboard.budgetSpent)}
+- Total gastado: ${formatCurrency(totalSpent, currency)} (semana anterior: ${formatCurrency(prevSpent, currency)})
+- Total ingresado: ${formatCurrency(totalIncome, currency)}
+- Reparto por categoría: ${categories.map((c) => `${c.name} ${formatCurrency(c.amount, currency)} (${c.pct.toFixed(0)}%)`).join("; ") || "sin gastos"}
+- Mayores gastos: ${topExpenses.map((t) => `${t.concept} ${formatCurrency(t.amount, currency)}`).join("; ") || "ninguno"}
+- Presupuesto mensual: ${formatCurrency(dashboard.budgetTotal, currency)}, gastado ${formatCurrency(dashboard.budgetSpent, currency)}
 - Presupuestos al límite: ${dashboard.budgets.filter((b) => b.pct >= 80).map((b) => `${b.category?.name} ${b.pct.toFixed(0)}%`).join("; ") || "ninguno"}
-- Disponible para gastar (calculado por la app, no lo recalcules): ${formatCurrency(dashboard.safeToSpend.available)} ${dashboard.safeToSpend.horizonLabel}
-- Límite diario recomendado: ${formatCurrency(dashboard.safeToSpend.dailyLimit)}
-- Patrimonio neto: ${formatCurrency(dashboard.netWorth.netWorth)} (activos ${formatCurrency(dashboard.netWorth.assets)}, deudas ${formatCurrency(dashboard.netWorth.liabilities)})
+- Disponible para gastar (calculado por la app, no lo recalcules): ${formatCurrency(dashboard.safeToSpend.available, currency)} ${dashboard.safeToSpend.horizonLabel}
+- Límite diario recomendado: ${formatCurrency(dashboard.safeToSpend.dailyLimit, currency)}
+- Patrimonio neto: ${formatCurrency(dashboard.netWorth.netWorth, currency)} (activos ${formatCurrency(dashboard.netWorth.assets, currency)}, deudas ${formatCurrency(dashboard.netWorth.liabilities, currency)})
 - Salud financiera ${dashboard.healthScore}/100: ${dashboard.healthComponents.map((c) => `${c.label} ${c.points}/${c.max}`).join(", ")}
-- Metas de ahorro: ${dashboard.goals.map((g) => `${g.title}: ${formatCurrency(g.saved_amount || 0)} de ${formatCurrency(g.target_amount)}`).join("; ") || "ninguna"}
-- Salidas planificadas: ${dashboard.outings.filter((o) => o.status === "planificada").map((o) => `${o.title} (estimado ${formatCurrency(o.estimated_cost || 0)}, máximo ${formatCurrency(o.max_recommended || 0)})`).join("; ") || "ninguna"}
+- Metas de ahorro: ${dashboard.goals.map((g) => `${g.title}: ${formatCurrency(g.saved_amount || 0, currency)} de ${formatCurrency(g.target_amount, currency)}`).join("; ") || "ninguna"}
+- Salidas planificadas: ${dashboard.outings.filter((o) => o.status === "planificada").map((o) => `${o.title} (estimado ${formatCurrency(o.estimated_cost || 0, currency)}, máximo ${formatCurrency(o.max_recommended || 0, currency)})`).join("; ") || "ninguna"}
 
 Escribe un informe semanal en español con este formato exacto:
 ## Resumen de la semana
@@ -91,12 +105,12 @@ Escribe un informe semanal en español con este formato exacto:
 ## Tus metas de ahorro
 (1-2 bullets sobre el progreso y si va en camino)
 ## Plan para la próxima semana
-(3 bullets accionables, cada uno con una cifra objetivo en euros)
+(3 bullets accionables, cada uno con una cifra objetivo en ${currency})
 ## Máximo recomendado para tus salidas
 (1-2 frases con cifras concretas)`;
 
     const content = await askAi(
-      "Eres un asesor financiero personal español. Escribes informes claros, honestos y muy accionables, siempre con cifras concretas en euros. No inventas datos que no estén en el contexto.",
+      `Eres un asesor financiero personal. Escribes informes claros, honestos y muy accionables, siempre con cifras concretas en ${currency}. No inventas datos que no estén en el contexto.`,
       prompt,
       { maxTokens: 1100, temperature: 0.5 }
     );
@@ -114,6 +128,7 @@ Escribe un informe semanal en español con este formato exacto:
         categories,
         topExpenses,
         content,
+        currency,
       });
       const pdf = await totalumSdk.files.createPdfFromHtml({
         html,
@@ -153,6 +168,7 @@ Escribe un informe semanal en español con este formato exacto:
             healthScore: dashboard.healthScore,
             content,
             pdfUrl,
+            currency,
           }),
         });
         emailSent = true;
@@ -165,8 +181,7 @@ Escribe un informe semanal en español con este formato exacto:
     await totalumSdk.crud.createRecord("notification", {
       title: "Informe semanal listo",
       message: `Tu informe del ${periodLabel} está disponible. Gastaste ${formatCurrency(
-        totalSpent
-      )} (${prevSpent > 0 ? `${totalSpent >= prevSpent ? "+" : "−"}${Math.abs(((totalSpent - prevSpent) / prevSpent) * 100).toFixed(0)} % vs. semana anterior` : "primera semana registrada"}).${
+        totalSpent, currency)} (${prevSpent > 0 ? `${totalSpent >= prevSpent ? "+" : "−"}${Math.abs(((totalSpent - prevSpent) / prevSpent) * 100).toFixed(0)} % vs. semana anterior` : "primera semana registrada"}).${
         emailSent ? ` Te lo he enviado a ${user.email}.` : ""
       }`,
       severity: "info",

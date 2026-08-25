@@ -19,14 +19,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CurrencyPicker } from "@/components/CurrencyPicker";
+import { currencySymbol, normalizeCurrency } from "@/lib/currency";
+import { useCurrency } from "@/components/CurrencyProvider";
 import { api } from "@/lib/api";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
 import type { BankAccount, Transaction } from "@/types/finance";
 import { toast } from "sonner";
-
-function money(v: number) {
-  return `${(v || 0).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-}
 
 const TYPE_LABEL: Record<string, string> = {
   cuenta: "Cuenta corriente",
@@ -36,6 +35,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export default function CuentasPage() {
+  const { money, toMain, mainCurrency } = useCurrency();
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [recent, setRecent] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +49,7 @@ export default function CuentasPage() {
     account_type: "cuenta",
     last_four: "",
     balance: "",
+    currency: mainCurrency,
   });
 
   const load = useCallback(async () => {
@@ -69,6 +70,12 @@ export default function CuentasPage() {
     })();
   }, [load]);
 
+  // La moneda principal llega del servidor un instante después del primer
+  // render: en cuanto la sabemos, la proponemos por defecto en el formulario.
+  useEffect(() => {
+    setForm((f) => (f.currency ? f : { ...f, currency: mainCurrency }));
+  }, [mainCurrency]);
+
   const create = async () => {
     if (!form.name.trim()) {
       toast.error("Ponle un nombre a la cuenta");
@@ -81,6 +88,7 @@ export default function CuentasPage() {
       account_type: form.account_type,
       last_four: form.last_four.trim() || undefined,
       balance: form.balance ? Number(form.balance.replace(",", ".")) : 0,
+      currency: form.currency || mainCurrency,
     });
     setSaving(false);
     if (!res.ok) {
@@ -90,7 +98,14 @@ export default function CuentasPage() {
     }
     toast.success("Cuenta añadida");
     setOpen(false);
-    setForm({ name: "", bank_name: "", account_type: "cuenta", last_four: "", balance: "" });
+    setForm({
+      name: "",
+      bank_name: "",
+      account_type: "cuenta",
+      last_four: "",
+      balance: "",
+      currency: mainCurrency,
+    });
     await load();
   };
 
@@ -108,11 +123,14 @@ export default function CuentasPage() {
     }
     toast.success(`Saldo de ${account.name} actualizado`);
     setEditing(null);
-    window.dispatchEvent(new Event("fintra:refresh"));
+    window.dispatchEvent(new Event("finestres:refresh"));
     await load();
   };
 
-  const total = accounts.reduce((s, a) => s + (a.balance || 0), 0);
+  // Cada cuenta puede estar en una divisa distinta: el total se calcula
+  // convirtiendo cada saldo a la moneda principal.
+  const total = accounts.reduce((sum, a) => sum + toMain(a.balance || 0, a.currency), 0);
+  const mixedCurrencies = new Set(accounts.map((a) => a.currency || mainCurrency)).size > 1;
 
   return (
     <AppShell>
@@ -184,7 +202,9 @@ export default function CuentasPage() {
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="acc-balance">Saldo (€)</Label>
+                    <Label htmlFor="acc-balance">
+                      Saldo ({currencySymbol(form.currency || mainCurrency)})
+                    </Label>
                     <Input
                       id="acc-balance"
                       inputMode="decimal"
@@ -194,6 +214,18 @@ export default function CuentasPage() {
                       className="mt-1.5 rounded-xl"
                     />
                   </div>
+                </div>
+                <div>
+                  <Label htmlFor="acc-currency">Moneda de la cuenta</Label>
+                  <CurrencyPicker
+                    id="acc-currency"
+                    value={form.currency || mainCurrency}
+                    onChange={(code) => setForm({ ...form, currency: code })}
+                  />
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    Los saldos y movimientos de esta cuenta se guardan en esta moneda. Los totales de la app se
+                    muestran siempre en {mainCurrency}.
+                  </p>
                 </div>
               </div>
               <DialogFooter>
@@ -219,6 +251,7 @@ export default function CuentasPage() {
             <p className="tabular mt-2 text-4xl font-semibold">{money(total)}</p>
             <p className="mt-2 text-xs text-muted-foreground">
               Suma del saldo de tus {accounts.length} cuentas y tarjetas
+              {mixedCurrencies ? `, convertido a ${mainCurrency} con tus tipos de cambio` : ""}
             </p>
           </Card>
 
@@ -233,7 +266,8 @@ export default function CuentasPage() {
                   <div>
                     <p className="text-sm font-medium">{a.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {a.bank_name} · {TYPE_LABEL[a.account_type || "cuenta"]}
+                      {a.bank_name} · {TYPE_LABEL[a.account_type || "cuenta"]} ·{" "}
+                      {normalizeCurrency(a.currency || mainCurrency)}
                     </p>
                   </div>
                   <span className="grid h-10 w-10 place-items-center rounded-2xl bg-secondary">
@@ -265,7 +299,12 @@ export default function CuentasPage() {
                   <p
                     className={`tabular mt-6 text-3xl font-semibold ${(a.balance || 0) < 0 ? "text-destructive" : ""}`}
                   >
-                    {money(a.balance || 0)}
+                    {money(a.balance || 0, a.currency)}
+                    {normalizeCurrency(a.currency || mainCurrency) !== mainCurrency && (
+                      <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                        ≈ {money(toMain(a.balance || 0, a.currency))} en {mainCurrency}
+                      </span>
+                    )}
                   </p>
                 )}
 
@@ -313,7 +352,7 @@ export default function CuentasPage() {
                       </div>
                       <span className="tabular text-sm font-medium">
                         {t.kind === "ingreso" ? "+" : "−"}
-                        {money(t.amount)}
+                        {money(t.amount, acc?.currency)}
                       </span>
                     </li>
                   );

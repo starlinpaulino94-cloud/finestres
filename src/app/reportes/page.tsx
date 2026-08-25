@@ -10,14 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCurrency } from "@/components/CurrencyProvider";
 import { api } from "@/lib/api";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
 import type { WeeklyReport } from "@/types/finance";
 import { toast } from "sonner";
-
-function money(v: number) {
-  return `${(v || 0).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-}
 
 const MONTH_NAMES = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -72,6 +69,7 @@ function ReportBody({ content }: { content: string }) {
 }
 
 export default function ReportesPage() {
+  const { money } = useCurrency();
   const [reports, setReports] = useState<WeeklyReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -105,7 +103,7 @@ export default function ReportesPage() {
       return;
     }
     toast.success(res.data?.emailSent ? "Informe generado y enviado a tu correo" : "Informe generado");
-    window.dispatchEvent(new Event("fintra:refresh"));
+    window.dispatchEvent(new Event("finestres:refresh"));
     await load();
   };
 

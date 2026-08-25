@@ -109,13 +109,16 @@ export async function POST(req: Request) {
       kind: c.kind,
     }));
 
+    // Todo el contexto (y por tanto los importes que devuelva la IA) va en la
+    // moneda principal del usuario.
+    const currency = dashboard.currency;
     const context = `Situación financiera actual (${dashboard.monthLabel}):
-- Ingresos del mes: ${formatCurrency(dashboard.income)}
-- Gastos del mes: ${formatCurrency(dashboard.expense)}
-- Presupuesto del mes: ${formatCurrency(dashboard.budgetTotal)}, gastado ${formatCurrency(dashboard.budgetSpent)}
-- Disponible real para gastar (ya calculado por la app, NO lo recalcules): ${formatCurrency(dashboard.safeToSpend.available)} ${dashboard.safeToSpend.horizonLabel}
-- Límite diario recomendado: ${formatCurrency(dashboard.safeToSpend.dailyLimit)}
-- Metas de ahorro: ${dashboard.goals.map((g) => `${g.title} (${formatCurrency(g.saved_amount || 0)}/${formatCurrency(g.target_amount)})`).join("; ") || "ninguna"}
+- Ingresos del mes: ${formatCurrency(dashboard.income, currency)}
+- Gastos del mes: ${formatCurrency(dashboard.expense, currency)}
+- Presupuesto del mes: ${formatCurrency(dashboard.budgetTotal, currency)}, gastado ${formatCurrency(dashboard.budgetSpent, currency)}
+- Disponible real para gastar (ya calculado por la app, NO lo recalcules): ${formatCurrency(dashboard.safeToSpend.available, currency)} ${dashboard.safeToSpend.horizonLabel}
+- Límite diario recomendado: ${formatCurrency(dashboard.safeToSpend.dailyLimit, currency)}
+- Metas de ahorro: ${dashboard.goals.map((g) => `${g.title} (${formatCurrency(g.saved_amount || 0, currency)}/${formatCurrency(g.target_amount, currency)})`).join("; ") || "ninguna"}
 - Categorías existentes: ${categories.map((c) => c.name).join(", ")}
 
 Nota de voz del usuario (transcripción literal):
@@ -130,10 +133,10 @@ Extrae TODO lo que el usuario cuenta y devuelve SOLO este JSON:
   "salidas": [{"titulo": "...", "dias_hasta": 3, "coste_estimado": 40}],
   "consejo": "consejo accionable en 2-4 frases, incluyendo el máximo que puede gastar en las salidas mencionadas"
 }
-Reglas: usa arrays vacíos si no menciona algo. "tipo" es "ingreso" solo si claramente cobra dinero. Los importes son números en euros. Si menciona una categoría que no existe, usa un nombre corto y claro.`;
+Reglas: usa arrays vacíos si no menciona algo. "tipo" es "ingreso" solo si claramente cobra dinero. Los importes son números en ${currency} (la moneda del usuario), sin símbolo. Si menciona una categoría que no existe, usa un nombre corto y claro.`;
 
     const aiText = await askAi(
-      "Eres el asistente financiero personal de la app Fintra. Interpretas notas de voz en español sobre gastos, presupuestos, metas de ahorro y salidas planificadas. Respondes únicamente con JSON válido.",
+      "Eres el asistente financiero personal de la app Finestres. Interpretas notas de voz en español sobre gastos, presupuestos, metas de ahorro y salidas planificadas. Respondes únicamente con JSON válido.",
       context,
       { maxTokens: 1200, temperature: 0.2 }
     );
@@ -250,7 +253,7 @@ Reglas: usa arrays vacíos si no menciona algo. "tipo" es "ingreso" solo si clar
 
     // 5) Alerts + assistant answer in the notification centre
     const fresh = await buildDashboard(user.id);
-    await refreshBudgetAlerts(user.id, fresh.budgets);
+    await refreshBudgetAlerts(user.id, fresh.budgets, fresh.currency);
 
     if (plan.consejo) {
       await totalumSdk.crud.createRecord("notification", {

@@ -11,7 +11,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCurrency } from "@/components/CurrencyProvider";
 import { api } from "@/lib/api";
+import { quickAddAmounts } from "@/lib/currency";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
 import type { BudgetProgress, Category, DashboardData, OutingPlan, SavingsGoal } from "@/types/finance";
 
@@ -38,11 +40,9 @@ const VERDICT_STYLE: Record<string, { label: string; className: string }> = {
 };
 import { toast } from "sonner";
 
-function money(v: number) {
-  return `${(v || 0).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-}
-
 export default function PlanificacionPage() {
+  // Presupuestos, metas y salidas se guardan siempre en la moneda principal.
+  const { money, mainCurrency, symbol } = useCurrency();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [budgetEdits, setBudgetEdits] = useState<Record<string, string>>({});
@@ -112,7 +112,7 @@ export default function PlanificacionPage() {
       return;
     }
     toast.success(`Límite de ${b.category.name} actualizado`);
-    window.dispatchEvent(new Event("fintra:refresh"));
+    window.dispatchEvent(new Event("finestres:refresh"));
     await load();
   };
 
@@ -142,7 +142,7 @@ export default function PlanificacionPage() {
     console.log("[Planificación] presupuesto creado:", cat?.name, value);
     toast.success(`Presupuesto de ${cat?.name || "la categoría"} fijado en ${money(value)}`);
     setBudgetForm({ category: "", limit: "" });
-    window.dispatchEvent(new Event("fintra:refresh"));
+    window.dispatchEvent(new Event("finestres:refresh"));
     await load();
   };
 
@@ -168,7 +168,7 @@ export default function PlanificacionPage() {
       `Meta creada · aporte sugerido ${money(res.data?.monthlyContribution || 0)}/mes`
     );
     setGoalForm({ title: "", target: "", deadline: "" });
-    window.dispatchEvent(new Event("fintra:refresh"));
+    window.dispatchEvent(new Event("finestres:refresh"));
     await load();
   };
 
@@ -205,7 +205,7 @@ export default function PlanificacionPage() {
     setLastAdvice({ max: res.data.maxRecommended, advice: res.data.advice });
     toast.success(`Máximo recomendado: ${money(res.data.maxRecommended)}`);
     setOutingForm({ title: "", cost: "", date: "" });
-    window.dispatchEvent(new Event("fintra:refresh"));
+    window.dispatchEvent(new Event("finestres:refresh"));
     await load();
   };
 
@@ -359,7 +359,7 @@ export default function PlanificacionPage() {
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="budget-limit">Límite del mes (€)</Label>
+                    <Label htmlFor="budget-limit">Límite del mes ({symbol})</Label>
                     <Input
                       id="budget-limit"
                       inputMode="decimal"
@@ -461,13 +461,13 @@ export default function PlanificacionPage() {
                         {g.deadline && <span>Objetivo: {new Date(g.deadline).toLocaleDateString("es-ES")}</span>}
                         {g.monthly_contribution ? <span>· {money(g.monthly_contribution)}/mes</span> : null}
                         <div className="ml-auto flex gap-1.5">
-                          {[25, 50, 100].map((amount) => (
+                          {quickAddAmounts(mainCurrency).map((amount) => (
                             <button
                               key={amount}
                               onClick={() => addToGoal(g, amount)}
                               className="rounded-full border border-border px-2.5 py-1 transition-colors hover:border-primary/50 hover:text-foreground"
                             >
-                              +{amount} €
+                              +{money(amount, mainCurrency, { decimals: 0 })}
                             </button>
                           ))}
                         </div>
@@ -500,7 +500,7 @@ export default function PlanificacionPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label htmlFor="goal-target">Objetivo (€)</Label>
+                    <Label htmlFor="goal-target">Objetivo ({symbol})</Label>
                     <Input
                       id="goal-target"
                       inputMode="decimal"
@@ -559,7 +559,7 @@ export default function PlanificacionPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label htmlFor="outing-cost">Coste estimado (€)</Label>
+                    <Label htmlFor="outing-cost">Coste estimado ({symbol})</Label>
                     <Input
                       id="outing-cost"
                       inputMode="decimal"
@@ -669,7 +669,7 @@ export default function PlanificacionPage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="sim-amount">Importe (€)</Label>
+                  <Label htmlFor="sim-amount">Importe ({symbol})</Label>
                   <Input
                     id="sim-amount"
                     inputMode="decimal"

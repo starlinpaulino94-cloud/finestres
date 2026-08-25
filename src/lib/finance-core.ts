@@ -1,5 +1,5 @@
 /**
- * Núcleo financiero determinista de Fintra.
+ * Núcleo financiero determinista de Finestres.
  *
  * Módulo PURO: sin I/O, sin SDK, sin imports de servidor. Todos los cálculos
  * críticos (saldo, patrimonio, disponible para gastar, presupuesto, salud
@@ -12,6 +12,10 @@
 /* ------------------------------------------------------------------ *
  * Tipos de movimiento
  * ------------------------------------------------------------------ */
+
+// Ruta relativa a propósito: scripts/finance-tests.ts corre con ts-node sin
+// resolución de alias "@/".
+import { DEFAULT_CURRENCY, formatMoney } from "./currency";
 
 export type TxKind = "gasto" | "ingreso" | "transferencia" | "pago_tarjeta" | "ajuste";
 
@@ -292,6 +296,8 @@ export interface SafeToSpendInput {
   incomeDates?: (string | Date)[];
   /** Colchón de seguridad sobre los ingresos del mes (5 % por defecto) */
   cushionRate?: number;
+  /** Moneda en la que ya vienen todos los importes (por defecto DOP) */
+  currency?: string;
 }
 
 export interface BreakdownItem {
@@ -334,6 +340,7 @@ export function computeSafeToSpend(input: SafeToSpendInput): SafeToSpend {
     plannedOutings,
     incomeDates = [],
     cushionRate = 0.05,
+    currency = DEFAULT_CURRENCY,
   } = input;
 
   const { liquidity, cardDebt } = computeNetWorth(accounts);
@@ -393,7 +400,7 @@ export function computeSafeToSpend(input: SafeToSpendInput): SafeToSpend {
       label: "Reserva para tus metas",
       amount: goalReserve,
       sign: "−",
-      hint: `Parte proporcional de los ${round2(monthlyGoalReserve)} € al mes que aportas a tus metas activas.`,
+      hint: `Parte proporcional de los ${formatMoney(round2(monthlyGoalReserve), currency)} al mes que aportas a tus metas activas.`,
     });
   }
   if (outingsCost > 0) {
@@ -451,19 +458,26 @@ export interface PurchaseSimulation {
 }
 
 /** Simula el impacto de una compra usando SÓLO cifras deterministas. */
-export function simulatePurchase(amount: number, safe: SafeToSpend): PurchaseSimulation {
+export function simulatePurchase(
+  amount: number,
+  safe: SafeToSpend,
+  currency: string = DEFAULT_CURRENCY
+): PurchaseSimulation {
   const cost = round2(amount);
   const remaining = round2(safe.available - cost);
   const impacts: string[] = [];
 
   if (remaining >= 0) {
     impacts.push(
-      `Te quedarían ${remaining.toFixed(2)} € disponibles ${safe.horizonLabel} (${round2(
-        remaining / safe.horizonDays
-      ).toFixed(2)} € al día).`
+      `Te quedarían ${formatMoney(remaining, currency)} disponibles ${safe.horizonLabel} (${formatMoney(
+        round2(remaining / safe.horizonDays),
+        currency
+      )} al día).`
     );
   } else {
-    impacts.push(`Te faltan ${Math.abs(remaining).toFixed(2)} € para poder pagarla sin tocar tus reservas.`);
+    impacts.push(
+      `Te faltan ${formatMoney(Math.abs(remaining), currency)} para poder pagarla sin tocar tus reservas.`
+    );
   }
   if (safe.budgetCapApplied) {
     impacts.push("Tu límite lo marca el presupuesto del mes, no la falta de dinero en cuenta.");
@@ -500,6 +514,8 @@ export interface HealthInput {
   cardDebt: number;
   /** Gasto medio mensual de los últimos meses */
   avgMonthlyExpense: number;
+  /** Moneda en la que ya vienen todos los importes (por defecto DOP) */
+  currency?: string;
 }
 
 export interface HealthComponent {
@@ -517,8 +533,16 @@ export interface HealthScore {
 
 /** Puntuación 0-100 con desglose: nunca un número arbitrario. */
 export function computeHealthScore(input: HealthInput): HealthScore {
-  const { monthIncome, monthExpense, budgetTotal, budgetSpent, liquidity, cardDebt, avgMonthlyExpense } =
-    input;
+  const {
+    monthIncome,
+    monthExpense,
+    budgetTotal,
+    budgetSpent,
+    liquidity,
+    cardDebt,
+    avgMonthlyExpense,
+    currency = DEFAULT_CURRENCY,
+  } = input;
 
   const savingsRate = monthIncome > 0 ? clamp((monthIncome - monthExpense) / monthIncome, 0, 1) : 0;
   const discipline = budgetTotal > 0 ? clamp(1 - budgetSpent / budgetTotal, 0, 1) : 0.5;
@@ -562,7 +586,7 @@ export function computeHealthScore(input: HealthInput): HealthScore {
       max: 20,
       detail:
         cardDebt > 0
-          ? `Debes ${round2(cardDebt).toFixed(2)} € de tarjeta, un ${Math.round(debtRatio * 100)} % de tus ingresos.`
+          ? `Debes ${formatMoney(round2(cardDebt), currency)} de tarjeta, un ${Math.round(debtRatio * 100)} % de tus ingresos.`
           : "No tienes deuda de tarjeta pendiente.",
     },
   ];

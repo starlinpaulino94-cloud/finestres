@@ -22,16 +22,17 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCurrency } from "@/components/CurrencyProvider";
 import { api } from "@/lib/api";
+import { txCurrency } from "@/lib/currency";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
 import type { DashboardData } from "@/types/finance";
 import { toast } from "sonner";
 
-function money(v: number) {
-  return `${(v || 0).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-}
-
 export default function DashboardPage() {
+  // Todos los agregados llegan del servidor ya convertidos a la moneda
+  // principal; sólo los movimientos sueltos conservan la de su cuenta.
+  const { money, mainCurrency } = useCurrency();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -503,7 +504,7 @@ export default function DashboardPage() {
                         }`}
                       >
                         {t.kind === "ingreso" ? "+" : "−"}
-                        {money(t.amount)}
+                        {money(t.amount, txCurrency(t, mainCurrency))}
                       </span>
                     </li>
                   );

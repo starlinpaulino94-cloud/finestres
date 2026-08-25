@@ -8,21 +8,79 @@ import { toast } from "sonner";
 import { signOut, useSession } from "@/lib/auth-client";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { disableBiometric, enableBiometric, isBiometricEnabled } from "@/components/BiometricLock";
+import { CurrencyPicker } from "@/components/CurrencyPicker";
+import { notifyCurrencyChange, useCurrency } from "@/components/CurrencyProvider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { api } from "@/lib/api";
+import { CURRENCIES, currencyMeta, formatMoney } from "@/lib/currency";
 
 export default function ProfilePage() {
   const router = useRouter();
   const { data: session } = useSession();
   const { theme, setTheme } = useTheme();
+  const { mainCurrency, rates } = useCurrency();
   const [biometric, setBiometric] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [savingCurrency, setSavingCurrency] = useState(false);
+  /** Tasas en edición, como texto, para no pelearse con el teclado del móvil */
+  const [rateDraft, setRateDraft] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setMounted(true);
     setBiometric(isBiometricEnabled());
   }, []);
+
+  // Las tasas llegan del servidor: se vuelcan al formulario cuando cambian.
+  useEffect(() => {
+    setRateDraft(
+      Object.fromEntries(
+        CURRENCIES.filter((c) => c.code !== mainCurrency).map((c) => [
+          c.code,
+          String(rates[c.code] ?? ""),
+        ])
+      )
+    );
+  }, [rates, mainCurrency]);
+
+  const changeMainCurrency = async (code: string) => {
+    if (code === mainCurrency) return;
+    setSavingCurrency(true);
+    const res = await api.put("/api/settings", { main_currency: code });
+    setSavingCurrency(false);
+    if (!res.ok) {
+      console.error("[Perfil] error cambiando la moneda principal:", res.error);
+      toast.error("No he podido cambiar la moneda principal");
+      return;
+    }
+    notifyCurrencyChange();
+    toast.success(`Ahora todos los totales se muestran en ${code}`);
+  };
+
+  const saveRates = async () => {
+    const payload: Record<string, number> = {};
+    for (const [code, raw] of Object.entries(rateDraft)) {
+      const value = Number(String(raw).replace(",", "."));
+      if (!Number.isFinite(value) || value <= 0) {
+        toast.error(`El tipo de cambio de ${code} no es válido`);
+        return;
+      }
+      payload[code] = value;
+    }
+    setSavingCurrency(true);
+    const res = await api.put("/api/settings", { exchange_rates: payload });
+    setSavingCurrency(false);
+    if (!res.ok) {
+      console.error("[Perfil] error guardando tipos de cambio:", res.error);
+      toast.error("No he podido guardar los tipos de cambio");
+      return;
+    }
+    notifyCurrencyChange();
+    toast.success("Tipos de cambio actualizados");
+  };
 
   const user = session?.user;
 
@@ -97,6 +155,64 @@ export default function ProfilePage() {
               </div>
             </li>
           </ul>
+        </Card>
+
+        {/* Monedas */}
+        <Card className="rise rounded-3xl p-5 sm:p-6">
+          <h2 className="mb-1 font-display text-lg">Monedas</h2>
+          <p className="mb-5 text-xs leading-relaxed text-muted-foreground">
+            Cada cuenta guarda su saldo en su propia moneda. Todos los totales de la app (patrimonio, disponible
+            para gastar, presupuestos e informes) se muestran en tu moneda principal.
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="main-currency">Moneda principal</Label>
+              <CurrencyPicker
+                id="main-currency"
+                value={mainCurrency}
+                onChange={changeMainCurrency}
+                ariaLabel="Moneda principal"
+              />
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                Ahora mismo: {currencyMeta(mainCurrency).name} · ejemplo {formatMoney(1234.5, mainCurrency)}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium">Tipos de cambio</p>
+              <p className="mb-3 mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                Cuántos {mainCurrency} vale 1 unidad de cada moneda. Los pones tú: la app no consulta ninguna
+                cotización externa, así que actualízalos cuando cambien.
+              </p>
+              <div className="space-y-2.5">
+                {CURRENCIES.filter((c) => c.code !== mainCurrency).map((c) => (
+                  <div key={c.code} className="flex items-center gap-3">
+                    <Label htmlFor={`rate-${c.code}`} className="min-w-0 flex-1 text-xs font-normal">
+                      <span className="block font-medium">1 {c.code}</span>
+                      <span className="block truncate text-muted-foreground">{c.name}</span>
+                    </Label>
+                    <Input
+                      id={`rate-${c.code}`}
+                      inputMode="decimal"
+                      value={rateDraft[c.code] ?? ""}
+                      onChange={(e) => setRateDraft({ ...rateDraft, [c.code]: e.target.value })}
+                      className="tabular h-11 w-32 rounded-xl text-base"
+                      aria-label={`Tipo de cambio de ${c.code} a ${mainCurrency}`}
+                    />
+                    <span className="w-12 shrink-0 text-xs text-muted-foreground">{mainCurrency}</span>
+                  </div>
+                ))}
+              </div>
+              <Button
+                onClick={saveRates}
+                disabled={savingCurrency}
+                className="mt-4 h-11 w-full rounded-xl sm:w-auto sm:px-6"
+              >
+                {savingCurrency ? "Guardando…" : "Guardar tipos de cambio"}
+              </Button>
+            </div>
+          </div>
         </Card>
 
         {/* Preferencias del dispositivo */}

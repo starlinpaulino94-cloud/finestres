@@ -48,32 +48,30 @@ export async function POST(req: Request) {
 
     const data = parsed.data;
     const dashboard = await buildDashboard(user.id);
+    const currency = dashboard.currency;
     const plannedOther = dashboard.outings
       .filter((o) => o.status === "planificada")
       .reduce((s, o) => s + (o.estimated_cost || 0), 0);
 
     const context = `Datos financieros del usuario (mes ${dashboard.monthLabel}):
-- Ingresos del mes: ${formatCurrency(dashboard.income)}
-- Gastos del mes: ${formatCurrency(dashboard.expense)}
-- Presupuesto total del mes: ${formatCurrency(dashboard.budgetTotal)} (gastado ${formatCurrency(dashboard.budgetSpent)})
-- Disponible real para gastar (calculado por la app, no lo recalcules): ${formatCurrency(dashboard.safeToSpend.available)} ${dashboard.safeToSpend.horizonLabel}
-- Límite diario recomendado: ${formatCurrency(dashboard.safeToSpend.dailyLimit)}
+- Ingresos del mes: ${formatCurrency(dashboard.income, currency)}
+- Gastos del mes: ${formatCurrency(dashboard.expense, currency)}
+- Presupuesto total del mes: ${formatCurrency(dashboard.budgetTotal, currency)} (gastado ${formatCurrency(dashboard.budgetSpent, currency)})
+- Disponible real para gastar (calculado por la app, no lo recalcules): ${formatCurrency(dashboard.safeToSpend.available, currency)} ${dashboard.safeToSpend.horizonLabel}
+- Límite diario recomendado: ${formatCurrency(dashboard.safeToSpend.dailyLimit, currency)}
 - Aportes mensuales comprometidos en metas de ahorro: ${formatCurrency(
-      dashboard.goals.reduce((s, g) => s + (g.monthly_contribution || 0), 0)
-    )}
-- Otras salidas ya planificadas este mes: ${formatCurrency(plannedOther)}
+      dashboard.goals.reduce((s, g) => s + (g.monthly_contribution || 0), 0), currency)}
+- Otras salidas ya planificadas este mes: ${formatCurrency(plannedOther, currency)}
 - Presupuesto de "Restaurantes y salidas": ${
       dashboard.budgets.find((b) => b.category?.name?.toLowerCase().includes("restaurante"))
         ? `${formatCurrency(
-            dashboard.budgets.find((b) => b.category?.name?.toLowerCase().includes("restaurante"))!.limit_amount
-          )} con ${formatCurrency(
-            dashboard.budgets.find((b) => b.category?.name?.toLowerCase().includes("restaurante"))!.spent
-          )} ya gastados`
+            dashboard.budgets.find((b) => b.category?.name?.toLowerCase().includes("restaurante"))!.limit_amount, currency)} con ${formatCurrency(
+            dashboard.budgets.find((b) => b.category?.name?.toLowerCase().includes("restaurante"))!.spent, currency)} ya gastados`
         : "no definido"
     }
 
 Nueva salida: "${data.title}"${data.planned_at ? `, fecha ${new Date(data.planned_at).toLocaleDateString("es-ES")}` : ""}${
-      data.estimated_cost ? `, coste estimado por el usuario ${formatCurrency(data.estimated_cost)}` : ""
+      data.estimated_cost ? `, coste estimado por el usuario ${formatCurrency(data.estimated_cost, currency)}` : ""
     }.
 
 Devuelve SOLO JSON: {"maximo_recomendado": number, "consejo": "2 o 3 frases en español, tono cercano y concreto"}`;
@@ -103,12 +101,9 @@ Devuelve SOLO JSON: {"maximo_recomendado": number, "consejo": "2 o 3 frases en e
 
     if (!advice) {
       advice = `Con tus cifras actuales puedes gastar hasta ${formatCurrency(
-        maxRecommended
-      )} en esta salida sin comprometer tus metas ni tu presupuesto. Tienes ${formatCurrency(
-        available
-      )} disponibles ${dashboard.safeToSpend.horizonLabel} (${formatCurrency(
-        dashboard.safeToSpend.dailyLimit
-      )} al día).`;
+        maxRecommended, currency)} en esta salida sin comprometer tus metas ni tu presupuesto. Tienes ${formatCurrency(
+        available, currency)} disponibles ${dashboard.safeToSpend.horizonLabel} (${formatCurrency(
+        dashboard.safeToSpend.dailyLimit, currency)} al día).`;
     }
 
     const res = await totalumSdk.crud.createRecord("outing_plan", {
@@ -125,8 +120,7 @@ Devuelve SOLO JSON: {"maximo_recomendado": number, "consejo": "2 o 3 frases en e
       await totalumSdk.crud.createRecord("notification", {
         title: `Ojo con "${data.title}"`,
         message: `Tu estimación (${formatCurrency(
-          data.estimated_cost ?? 0
-        )}) supera el máximo recomendado de ${formatCurrency(maxRecommended)}. ${advice}`,
+          data.estimated_cost ?? 0, currency)}) supera el máximo recomendado de ${formatCurrency(maxRecommended, currency)}. ${advice}`,
         severity: "aviso",
         is_read: "no",
         user: user.id,

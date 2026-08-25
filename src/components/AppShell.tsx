@@ -71,10 +71,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       if (active) await loadNotifications();
     })();
     const onRefresh = () => loadNotifications();
-    window.addEventListener("fintra:refresh", onRefresh);
+    window.addEventListener("finestres:refresh", onRefresh);
     return () => {
       active = false;
-      window.removeEventListener("fintra:refresh", onRefresh);
+      window.removeEventListener("finestres:refresh", onRefresh);
     };
   }, [session, loadNotifications]);
 
@@ -127,7 +127,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground font-display text-lg">
               F
             </span>
-            <span className="font-display text-xl">Fintra</span>
+            <span className="font-display text-xl">Finestres</span>
           </Link>
 
           <nav className="space-y-1">
@@ -181,7 +181,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
             <div className="hidden sm:block">
               <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                {NAV.find((n) => n.href === pathname)?.label || "Fintra"}
+                {NAV.find((n) => n.href === pathname)?.label || "Finestres"}
               </p>
               <p className="text-sm font-medium">Hola, {session.user.name || session.user.email}</p>
             </div>

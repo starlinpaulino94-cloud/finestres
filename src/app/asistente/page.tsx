@@ -6,6 +6,7 @@ import { AppShell, PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { useCurrency } from "@/components/CurrencyProvider";
 import { api } from "@/lib/api";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
 import type { VoiceNote } from "@/types/finance";
@@ -22,17 +23,16 @@ interface VoiceResult {
   dailySafeSpend: number;
 }
 
+// Sin símbolo de moneda: el asistente interpreta las cifras en la moneda
+// principal del usuario, así que los ejemplos valen igual en DOP que en euros.
 const EXAMPLES = [
-  "Hoy gasté 12 € en el súper y 4,50 en un café. Mi presupuesto de restaurantes es de 200 € al mes.",
-  "Quiero ahorrar 3.000 € para un viaje a Japón en 12 meses.",
+  "Hoy gasté 850 en el súper y 150 en un café. Mi presupuesto de restaurantes es de 12.000 al mes.",
+  "Quiero ahorrar 180.000 para un viaje a Japón en 12 meses.",
   "El sábado salgo a cenar con amigos, ¿cuánto puedo gastar como máximo?",
 ];
 
-function money(v: number) {
-  return `${(v || 0).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-}
-
 export default function AsistentePage() {
+  const { money } = useCurrency();
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -79,7 +79,7 @@ export default function AsistentePage() {
         res.data.transactions.length + res.data.budgets.length + res.data.goals.length + res.data.outings.length;
       toast.success(created > 0 ? `He registrado ${created} elementos` : "Analizado");
       console.log("[Asistente] resultado:", res.data);
-      window.dispatchEvent(new Event("fintra:refresh"));
+      window.dispatchEvent(new Event("finestres:refresh"));
       await loadNotes();
     },
     [loadNotes]
@@ -182,7 +182,7 @@ export default function AsistentePage() {
               <Textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                placeholder="Hoy gasté 12 € en el súper y 4,50 en un café…"
+                placeholder="Hoy gasté 850 en el súper y 150 en un café…"
                 rows={3}
                 className="min-h-24 rounded-2xl text-base"
               />

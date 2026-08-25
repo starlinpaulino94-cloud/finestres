@@ -13,6 +13,14 @@ import {
   round2,
   sumMoney,
 } from "@/lib/finance-core";
+import {
+  DEFAULT_CURRENCY,
+  convertAmount,
+  formatMoney,
+  normalizeCurrency,
+  txCurrency,
+} from "@/lib/currency";
+import { ensureCurrencySettings, getCurrencySettings } from "@/lib/user-currency";
 import type {
   BudgetProgress,
   DashboardData,
@@ -157,6 +165,16 @@ export const DEFAULT_CATEGORIES: {
  * Idempotente: sólo actúa si el usuario todavía no tiene categorías.
  * ------------------------------------------------------------------ */
 export async function bootstrapUserData(userId: string): Promise<{ created: boolean }> {
+  // Moneda nativa por defecto: peso dominicano. Idempotente: sólo crea los
+  // ajustes si el usuario todavía no los tiene.
+  try {
+    const settings = await ensureCurrencySettings(userId);
+    console.log("[finance] moneda principal de", userId, "→", settings.mainCurrency);
+  } catch (err) {
+    console.error("[finance] no he podido preparar la moneda principal:", userId, err);
+    throw err;
+  }
+
   const existing = await totalumSdk.crud.query("category", {
     _filter: { user: userId },
     _limit: 1,
@@ -180,7 +198,7 @@ export async function bootstrapUserData(userId: string): Promise<{ created: bool
   }
 
   await totalumSdk.crud.createRecord("notification", {
-    title: "Bienvenido a Fintra",
+    title: "Bienvenido a Finestres",
     message:
       "Tu cuenta está vacía y lista para tus datos reales. Empieza por añadir tus cuentas con su saldo actual y registra tu primer movimiento a mano o con una nota de voz. Después define tus presupuestos y tus metas de ahorro.",
     severity: "info",
@@ -195,7 +213,11 @@ export async function bootstrapUserData(userId: string): Promise<{ created: bool
 /** ------------------------------------------------------------------
  * Alerts: creates notifications when a budget gets close to its limit
  * ------------------------------------------------------------------ */
-export async function refreshBudgetAlerts(userId: string, budgets: BudgetProgress[]) {
+export async function refreshBudgetAlerts(
+  userId: string,
+  budgets: BudgetProgress[],
+  currency: string = DEFAULT_CURRENCY
+) {
   const month = monthKey(new Date());
   const existing = await totalumSdk.crud.query("notification", {
     _filter: { user: userId },
@@ -216,8 +238,8 @@ export async function refreshBudgetAlerts(userId: string, budgets: BudgetProgres
     await totalumSdk.crud.createRecord("notification", {
       title,
       message: exceeded
-        ? `Has gastado ${formatCurrency(b.spent)} de los ${formatCurrency(b.limit_amount)} presupuestados en ${b.category.name}. Frena este gasto el resto del mes.`
-        : `Llevas ${formatCurrency(b.spent)} de ${formatCurrency(b.limit_amount)} (${b.pct.toFixed(0)} %) en ${b.category.name}. Te quedan ${formatCurrency(b.limit_amount - b.spent)} este mes.`,
+        ? `Has gastado ${formatCurrency(b.spent, currency)} de los ${formatCurrency(b.limit_amount, currency)} presupuestados en ${b.category.name}. Frena este gasto el resto del mes.`
+        : `Llevas ${formatCurrency(b.spent, currency)} de ${formatCurrency(b.limit_amount, currency)} (${b.pct.toFixed(0)} %) en ${b.category.name}. Te quedan ${formatCurrency(b.limit_amount - b.spent, currency)} este mes.`,
       severity: exceeded ? "critica" : "aviso",
       is_read: "no",
       user: userId,
@@ -235,6 +257,11 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
   const now = new Date();
   const month = monthKey(now);
   const from = addMonths(now, -5);
+
+  // Moneda principal del usuario (DOP por defecto) + sus tipos de cambio.
+  const { mainCurrency, rates } = await getCurrencySettings(userId);
+  const toMain = (value: number, from?: string | null) =>
+    convertAmount(value || 0, from || mainCurrency, mainCurrency, rates, mainCurrency);
 
   const [txRes, budgetsRes, goalsRes, outingsRes, accountsRes, notifRes] = await Promise.all([
     totalumSdk.crud.query("transaction", {
@@ -268,7 +295,15 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
   ]);
 
   const transactions = ((txRes.data as any[]) || []) as Transaction[];
-  const monthTx = transactions.filter((t) => monthKey(new Date(t.spent_at)) === month);
+
+  // Los movimientos se guardan en la moneda de SU cuenta. Para poder sumarlos
+  // entre sí, aquí se pasan todos a la moneda principal; la lista de
+  // movimientos recientes se sigue mostrando en su moneda original.
+  const txInMain = transactions.map((t) => ({
+    ...t,
+    amount: toMain(t.amount, txCurrency(t as any, mainCurrency)),
+  })) as Transaction[];
+  const monthTx = txInMain.filter((t) => monthKey(new Date(t.spent_at)) === month);
 
   // Todos los importes salen del núcleo determinista (src/lib/finance-core.ts):
   // las transferencias, los pagos de tarjeta y los ajustes NUNCA cuentan como
@@ -330,7 +365,7 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
   const monthlySeries = Array.from({ length: 6 }, (_, i) => {
     const d = addMonths(now, -(5 - i));
     const key = monthKey(d);
-    const rows = transactions.filter((t) => monthKey(new Date(t.spent_at)) === key);
+    const rows = txInMain.filter((t) => monthKey(new Date(t.spent_at)) === key);
     const totals = computeTotals(rows as any);
     return {
       month: key,
@@ -360,24 +395,32 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
   const budgetSpent = sumMoney(budgets.map((b) => b.spent));
   const daysLeft = Math.max(totalDays - now.getDate() + 1, 1);
 
-  const accounts = ((accountsRes.data as any[]) || []) as any[];
+  const accounts = (((accountsRes.data as any[]) || []) as any[]).map((a) => ({
+    ...a,
+    currency: normalizeCurrency(a.currency || mainCurrency),
+    // Saldo convertido a la moneda principal, para los totales agregados.
+    balance_main: toMain(a.balance || 0, a.currency),
+  }));
+  // Copia en moneda principal: es la que alimenta patrimonio y disponible.
+  const accountsInMain = accounts.map((a) => ({ ...a, balance: a.balance_main }));
   const outings = (((outingsRes.data as any[]) || []) as any[]).filter((o) => o.status !== "cancelada");
 
   // Patrimonio neto = activos − pasivos (las tarjetas en negativo son deuda)
-  const netWorth = computeNetWorth(accounts);
+  const netWorth = computeNetWorth(accountsInMain);
 
   // "Disponible para gastar": liquidez menos obligaciones, reservas y colchón.
   // NUNCA es el saldo del banco, y el desglose se muestra al usuario.
   const safeToSpend = computeSafeToSpend({
     today: now,
-    accounts,
+    accounts: accountsInMain,
+    currency: mainCurrency,
     monthIncome: income,
     monthExpense: expense,
     budgetTotal,
     budgetSpent,
     goals,
     plannedOutings: outings,
-    incomeDates: transactions.filter((t) => isIncome(t.kind)).map((t) => t.spent_at),
+    incomeDates: txInMain.filter((t) => isIncome(t.kind)).map((t) => t.spent_at),
   });
 
   const pastMonths = monthlySeries.filter((m) => m.month !== month && m.expense > 0);
@@ -393,6 +436,7 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
     liquidity: netWorth.liquidity,
     cardDebt: netWorth.cardDebt,
     avgMonthlyExpense,
+    currency: mainCurrency,
   });
 
   const notifications = ((notifRes.data as any[]) || []) as any[];
@@ -400,6 +444,8 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
   return {
     month,
     monthLabel: monthLabel(month),
+    currency: mainCurrency,
+    exchangeRates: rates,
     income,
     expense,
     internalMoved: monthTotals.internal,
@@ -464,8 +510,9 @@ export function extractJson<T>(text: string): T | null {
   }
 }
 
-export function formatCurrency(value: number): string {
-  return `${(value || 0).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+/** Formatea un importe en la moneda indicada (por defecto la nativa, DOP). */
+export function formatCurrency(value: number, currency: string = DEFAULT_CURRENCY): string {
+  return formatMoney(value || 0, currency);
 }
 
 /** ------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import "server-only";
 import { formatCurrency } from "@/lib/finance";
+import { DEFAULT_CURRENCY } from "@/lib/currency";
 
 const BRAND = {
   ink: "#0d1117",
@@ -84,17 +85,21 @@ export function weeklyReportHtml(params: {
   categories: { name: string; amount: number; pct: number }[];
   topExpenses: { concept: string; amount: number; date: string; category: string }[];
   content: string;
+  /** Moneda en la que vienen los importes (por defecto DOP) */
+  currency?: string;
 }): string {
+  // Todos los importes del informe van en la moneda principal del usuario.
+  const fmt = (value: number) => formatCurrency(value, params.currency || DEFAULT_CURRENCY);
   return `<html><head><meta charset="utf-8" /><style>${baseStyles}</style></head><body>
   <div class="brand">
-    <h1>Fintra · Informe semanal</h1>
+    <h1>Finestres · Informe semanal</h1>
     <span>${escapeHtml(params.periodLabel)}</span>
   </div>
   <p style="margin-top:16px">Hola ${escapeHtml(params.userName)}, este es el análisis de tu semana.</p>
   <div class="kpis">
-    <div class="kpi"><small>Gastado</small><strong>${formatCurrency(params.totalSpent)}</strong></div>
-    <div class="kpi"><small>Ingresado</small><strong>${formatCurrency(params.totalIncome)}</strong></div>
-    <div class="kpi"><small>Balance</small><strong>${formatCurrency(params.totalIncome - params.totalSpent)}</strong></div>
+    <div class="kpi"><small>Gastado</small><strong>${fmt(params.totalSpent)}</strong></div>
+    <div class="kpi"><small>Ingresado</small><strong>${fmt(params.totalIncome)}</strong></div>
+    <div class="kpi"><small>Balance</small><strong>${fmt(params.totalIncome - params.totalSpent)}</strong></div>
     <div class="kpi"><small>Salud financiera</small><strong>${params.healthScore}/100</strong></div>
   </div>
 
@@ -107,7 +112,7 @@ export function weeklyReportHtml(params: {
           (c) => `<tr><td>${escapeHtml(c.name)}</td><td><div class="bar"><div style="width:${Math.min(
             c.pct,
             100
-          ).toFixed(1)}%"></div></div></td><td class="num">${formatCurrency(c.amount)}</td></tr>`
+          ).toFixed(1)}%"></div></div></td><td class="num">${fmt(c.amount)}</td></tr>`
         )
         .join("")}
     </tbody>
@@ -122,7 +127,7 @@ export function weeklyReportHtml(params: {
           (t) =>
             `<tr><td>${escapeHtml(t.concept)}</td><td>${escapeHtml(t.category)}</td><td>${escapeHtml(
               t.date
-            )}</td><td class="num">${formatCurrency(t.amount)}</td></tr>`
+            )}</td><td class="num">${fmt(t.amount)}</td></tr>`
         )
         .join("")}
     </tbody>
@@ -131,7 +136,7 @@ export function weeklyReportHtml(params: {
   <h2>Análisis y plan de acción</h2>
   ${markdownishToHtml(params.content)}
 
-  <div class="footer">Informe generado automáticamente por el asistente de Fintra. Los importes están en euros.</div>
+  <div class="footer">Informe generado automáticamente por el asistente de Finestres. Todos los importes están en ${params.currency || DEFAULT_CURRENCY}.</div>
   </body></html>`;
 }
 
@@ -151,17 +156,21 @@ export function statementHtml(params: {
     sign: string;
     amount: number;
   }[];
+  /** Moneda en la que vienen los importes (por defecto DOP) */
+  currency?: string;
 }): string {
+  // Todos los importes del informe van en la moneda principal del usuario.
+  const fmt = (value: number) => formatCurrency(value, params.currency || DEFAULT_CURRENCY);
   return `<html><head><meta charset="utf-8" /><style>${baseStyles}</style></head><body>
   <div class="brand">
-    <h1>Fintra · Estado de cuenta</h1>
+    <h1>Finestres · Estado de cuenta</h1>
     <span>${escapeHtml(params.periodLabel)}</span>
   </div>
   <div class="kpis">
     <div class="kpi"><small>Titular</small><strong style="font-size:14px">${escapeHtml(params.userName)}</strong></div>
-    <div class="kpi"><small>Gastos</small><strong>${formatCurrency(params.totalSpent)}</strong></div>
-    <div class="kpi"><small>Ingresos</small><strong>${formatCurrency(params.totalIncome)}</strong></div>
-    <div class="kpi"><small>Balance</small><strong>${formatCurrency(params.totalIncome - params.totalSpent)}</strong></div>
+    <div class="kpi"><small>Gastos</small><strong>${fmt(params.totalSpent)}</strong></div>
+    <div class="kpi"><small>Ingresos</small><strong>${fmt(params.totalIncome)}</strong></div>
+    <div class="kpi"><small>Balance</small><strong>${fmt(params.totalIncome - params.totalSpent)}</strong></div>
   </div>
   <h2>Movimientos (${params.rows.length})</h2>
   <table>
@@ -174,12 +183,12 @@ export function statementHtml(params: {
               r.category
             )}</td><td>${escapeHtml(r.account)}</td><td>${escapeHtml(r.kind)}</td><td class="num">${
               r.sign
-            }${formatCurrency(r.amount)}</td></tr>`
+            }${fmt(r.amount)}</td></tr>`
         )
         .join("")}
     </tbody>
   </table>
-  <div class="footer">Documento generado por Fintra el ${new Date().toLocaleString("es-ES")}.</div>
+  <div class="footer">Documento generado por Finestres el ${new Date().toLocaleString("es-ES")}.</div>
   </body></html>`;
 }
 
@@ -191,20 +200,24 @@ export function weeklyEmailHtml(params: {
   healthScore: number;
   content: string;
   pdfUrl?: string | null;
+  /** Moneda en la que vienen los importes (por defecto DOP) */
+  currency?: string;
 }): string {
+  // Todos los importes del informe van en la moneda principal del usuario.
+  const fmt = (value: number) => formatCurrency(value, params.currency || DEFAULT_CURRENCY);
   return `<div style="font-family:Helvetica,Arial,sans-serif;max-width:620px;margin:0 auto;color:#0d1117">
     <div style="background:#0d1117;color:#fff;padding:26px 28px;border-radius:16px 16px 0 0">
-      <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:.65">Fintra · informe semanal</div>
+      <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:.65">Finestres · informe semanal</div>
       <h1 style="margin:8px 0 0;font-size:22px">Hola ${escapeHtml(params.userName)}, aquí tienes tu semana</h1>
       <div style="opacity:.7;font-size:13px;margin-top:6px">${escapeHtml(params.periodLabel)}</div>
     </div>
     <div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 16px 16px;padding:24px 28px">
       <table style="width:100%;border-collapse:collapse;margin-bottom:18px">
         <tr>
-          <td style="font-size:12px;color:#6b7280">Gastado<br><strong style="font-size:18px;color:#0d1117">${formatCurrency(
+          <td style="font-size:12px;color:#6b7280">Gastado<br><strong style="font-size:18px;color:#0d1117">${fmt(
             params.totalSpent
           )}</strong></td>
-          <td style="font-size:12px;color:#6b7280">Ingresado<br><strong style="font-size:18px;color:#0d1117">${formatCurrency(
+          <td style="font-size:12px;color:#6b7280">Ingresado<br><strong style="font-size:18px;color:#0d1117">${fmt(
             params.totalIncome
           )}</strong></td>
           <td style="font-size:12px;color:#6b7280">Salud financiera<br><strong style="font-size:18px;color:#16a34a">${

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useCurrency } from "@/components/CurrencyProvider";
 
 /**
  * Ancho real en píxeles del contenedor. Los SVG usan `viewBox`, así que al
@@ -24,8 +25,14 @@ function useRenderedWidth<T extends HTMLElement>() {
   return { ref, width };
 }
 
-function money(value: number) {
-  return `${(value || 0).toLocaleString("es-ES", { maximumFractionDigits: 0 })} €`;
+/**
+ * Las gráficas reciben importes YA convertidos a la moneda principal del
+ * usuario, así que aquí sólo hace falta el formateador de esa moneda. Sin
+ * decimales: en un eje o una etiqueta corta los céntimos sólo estorban.
+ */
+function useChartMoney() {
+  const { money } = useCurrency();
+  return (value: number) => money(value || 0, undefined, { decimals: 0 });
 }
 
 /* ---------------------------------------------------------------------------
@@ -36,6 +43,7 @@ export function MoneyFlowChart({
 }: {
   data: { label: string; income: number; expense: number }[];
 }) {
+  const money = useChartMoney();
   const { ref, width: rendered } = useRenderedWidth<HTMLDivElement>();
   const compact = rendered > 0 && rendered < 520;
 
@@ -149,6 +157,7 @@ export function CategoryDonut({
   data: { name: string; color: string; emoji: string; amount: number }[];
   total: number;
 }) {
+  const money = useChartMoney();
   const R = 74;
   const STROKE = 22;
   const C = 2 * Math.PI * R;
@@ -205,6 +214,7 @@ export function CategoryDonut({
  * Barras de gasto diario del mes
  * ------------------------------------------------------------------------- */
 export function DailyBars({ data }: { data: { day: string; amount: number }[] }) {
+  const money = useChartMoney();
   const max = Math.max(...data.map((d) => d.amount), 1);
   // En móvil no hay hover. Además, un tooltip flotante por barra ensanchaba el
   // layout y empujaba las tarjetas fuera de la pantalla: mostramos el detalle

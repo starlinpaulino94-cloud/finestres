@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { totalumSdk } from "@/lib/totalum";
-import { askAi, getSessionUser, serializeError } from "@/lib/finance";
+import { askAi, formatCurrency, getSessionUser, serializeError } from "@/lib/finance";
+import { getCurrencySettings } from "@/lib/user-currency";
 
 const schema = z.object({
   title: z.string().min(1),
@@ -64,12 +65,15 @@ export async function POST(req: Request) {
       user: user.id,
     });
 
+    // Las metas se guardan en la moneda principal del usuario.
+    const { mainCurrency } = await getCurrencySettings(user.id);
+
     // Non-critical: an AI tip about the new goal, logged but never blocking
     let advice = "";
     try {
       advice = await askAi(
         "Eres un asesor financiero personal español, directo y práctico. Máximo 2 frases.",
-        `Meta de ahorro: "${data.title}". Objetivo ${data.target_amount} €, ya ahorrados ${saved} €, plazo ${monthsLeft} meses (aporte necesario ${monthlyContribution} €/mes). Dame un consejo concreto para conseguirla.`,
+        `Meta de ahorro: "${data.title}". Objetivo ${formatCurrency(data.target_amount, mainCurrency)}, ya ahorrados ${formatCurrency(saved, mainCurrency)}, plazo ${monthsLeft} meses (aporte necesario ${formatCurrency(monthlyContribution, mainCurrency)}/mes). Dame un consejo concreto para conseguirla.`,
         { maxTokens: 160, temperature: 0.6 }
       );
     } catch (aiErr) {
@@ -79,7 +83,7 @@ export async function POST(req: Request) {
     if (advice) {
       await totalumSdk.crud.createRecord("notification", {
         title: `Nueva meta: ${data.title}`,
-        message: `${advice}\n\nAporte sugerido: ${monthlyContribution} €/mes durante ${monthsLeft} meses.`,
+        message: `${advice}\n\nAporte sugerido: ${formatCurrency(monthlyContribution, mainCurrency)}/mes durante ${monthsLeft} meses.`,
         severity: "info",
         is_read: "no",
         user: user.id,

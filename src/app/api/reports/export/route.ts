@@ -4,6 +4,8 @@ import { totalumSdk } from "@/lib/totalum";
 import { getSessionUser, monthKey, monthLabel, serializeError } from "@/lib/finance";
 import { computeTotals, kindMeta } from "@/lib/finance-core";
 import { statementHtml } from "@/lib/report-html";
+import { getCurrencySettings } from "@/lib/user-currency";
+import { convertAmount, currencyMeta, txCurrency } from "@/lib/currency";
 
 const schema = z.object({
   format: z.enum(["pdf", "excel"]),
@@ -35,6 +37,9 @@ export async function POST(req: Request) {
       bank_account: true,
     });
 
+    // Moneda principal: el estado de cuenta se emite en una sola divisa, así
+    // que cada importe se convierte desde la moneda de su cuenta.
+    const { mainCurrency, rates } = await getCurrencySettings(user.id);
     const rows = ((txRes.data as any[]) || []).map((t) => ({
       date: new Date(t.spent_at).toLocaleDateString("es-ES"),
       concept: t.concept || "",
@@ -43,7 +48,9 @@ export async function POST(req: Request) {
       kind: kindMeta(t.kind).label,
       sign: kindMeta(t.kind).sign,
       rawKind: t.kind || "gasto",
-      amount: t.amount || 0,
+      amount: convertAmount(t.amount || 0, txCurrency(t, mainCurrency), mainCurrency, rates, mainCurrency),
+      /** Moneda en la que el usuario lo registró, por si no es la principal */
+      originalCurrency: txCurrency(t, mainCurrency),
       source: t.source || "manual",
     }));
 
@@ -54,7 +61,8 @@ export async function POST(req: Request) {
     const periodLabel = monthLabel(month);
 
     if (parsed.data.format === "excel") {
-      const header = ["Fecha", "Concepto", "Categoría", "Cuenta", "Tipo", "Origen", "Importe (€)"];
+      const symbol = currencyMeta(mainCurrency).symbol;
+      const header = ["Fecha", "Concepto", "Categoría", "Cuenta", "Tipo", "Origen", `Importe (${symbol})`];
       const csvRows = rows.map((r) =>
         [
           r.date,
@@ -80,7 +88,7 @@ export async function POST(req: Request) {
         ok: true,
         data: {
           format: "excel",
-          filename: `fintra-movimientos-${month}.csv`,
+          filename: `finestres-movimientos-${month}.csv`,
           content: csv,
           rows: rows.length,
         },
@@ -94,8 +102,9 @@ export async function POST(req: Request) {
         totalSpent,
         totalIncome,
         rows,
+        currency: mainCurrency,
       }),
-      name: `fintra-estado-cuenta-${month}.pdf`,
+      name: `finestres-estado-cuenta-${month}.pdf`,
     });
 
     console.log("[API] export pdf:", month, rows.length, "movimientos");
@@ -103,7 +112,7 @@ export async function POST(req: Request) {
       ok: true,
       data: {
         format: "pdf",
-        filename: `fintra-estado-cuenta-${month}.pdf`,
+        filename: `finestres-estado-cuenta-${month}.pdf`,
         url: (pdf.data as any)?.url || null,
         rows: rows.length,
       },

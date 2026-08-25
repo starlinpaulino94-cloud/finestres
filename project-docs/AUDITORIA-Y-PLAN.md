@@ -1,4 +1,4 @@
-# Fintra · Auditoría técnica, arquitectura objetivo y plan por fases
+# Finestres · Auditoría técnica, arquitectura objetivo y plan por fases
 
 > Documento de **checkpoint** (fases 0-3 del proceso solicitado): diagnóstico completo del
 > proyecto existente, arquitectura propuesta, priorización P0-P3 y plan de implementación.
@@ -12,7 +12,7 @@
 
 ## 1. Resumen de lo encontrado
 
-Fintra es una app de finanzas personales **funcional y bien presentada**, con una capa de IA
+Finestres es una app de finanzas personales **funcional y bien presentada**, con una capa de IA
 real (Whisper + GPT vía Totalum) y siete pantallas operativas. No es un prototipo vacío: la
 persistencia, la autenticación, las alertas, los informes en PDF y el envío por email funcionan.
 

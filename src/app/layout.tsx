@@ -7,6 +7,7 @@ import { ScriptExecutor } from "@/components/ScriptExecutor";
 import { DevToolsHandler } from "@/components/DevToolsHandler";
 import { GlobalErrorCatcher } from "@/components/GlobalErrorCatcher";
 import { TemporalLinkBanner } from "@/components/TemporalLinkBanner";
+import { CurrencyProvider } from "@/components/CurrencyProvider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -28,11 +29,11 @@ const numeric = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Fintra · Tu copiloto financiero",
+  title: "Finestres · Tu copiloto financiero",
   description:
     "Controla tus finanzas personales con un asistente de IA al que le mandas notas de voz: gastos, presupuestos, metas de ahorro, alertas e informes semanales.",
-  // Permite instalar Fintra en la pantalla de inicio del móvil como una app.
-  appleWebApp: { capable: true, title: "Fintra", statusBarStyle: "black-translucent" },
+  // Permite instalar Finestres en la pantalla de inicio del móvil como una app.
+  appleWebApp: { capable: true, title: "Finestres", statusBarStyle: "black-translucent" },
   formatDetection: { telephone: false },
 };
 
@@ -57,15 +58,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es" suppressHydrationWarning>
       <body className={`${display.variable} ${body.variable} ${numeric.variable} antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
-          <GlobalErrorCatcher />
-          <ScriptExecutor />
-          <DevToolsHandler />
-          {/* Development-preview only banner. Kept outside the page wrapper so it never covers content. */}
-          <TemporalLinkBanner />
-          <div className="min-h-screen flex flex-col">
-            <main className="flex-1">{children}</main>
-          </div>
-          <Toaster position="top-center" richColors closeButton className="sm:!right-4 sm:!left-auto" />
+          {/* Moneda principal del usuario (DOP por defecto) disponible en toda la app */}
+          <CurrencyProvider>
+            <GlobalErrorCatcher />
+            <ScriptExecutor />
+            <DevToolsHandler />
+            {/* Development-preview only banner. Kept outside the page wrapper so it never covers content. */}
+            <TemporalLinkBanner />
+            <div className="min-h-screen flex flex-col">
+              <main className="flex-1">{children}</main>
+            </div>
+            <Toaster position="top-center" richColors closeButton className="sm:!right-4 sm:!left-auto" />
+          </CurrencyProvider>
         </ThemeProvider>
       </body>
     </html>

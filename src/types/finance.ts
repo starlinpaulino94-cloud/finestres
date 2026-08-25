@@ -1,4 +1,4 @@
-// Shared types for the personal finance app (Fintra)
+// Shared types for the personal finance app (Finestres)
 import type {
   BreakdownItem,
   HealthComponent,
@@ -30,7 +30,10 @@ export interface BankAccount {
   account_type?: "cuenta" | "tarjeta_credito" | "tarjeta_debito" | "efectivo";
   last_four?: string;
   balance?: number;
+  /** Moneda de la cuenta (ISO 4217). Por defecto la principal del usuario */
   currency?: string;
+  /** Saldo convertido a la moneda principal, lo calcula el servidor */
+  balance_main?: number;
   /** Momento del último saldo real confirmado (snapshot del ledger) */
   balance_as_of?: string;
   /** Idempotencia de creaciones confirmadas por el asistente */
@@ -154,6 +157,10 @@ export interface WeeklyReport {
 export interface DashboardData {
   month: string;
   monthLabel: string;
+  /** Moneda en la que vienen TODOS los importes agregados de este objeto */
+  currency: string;
+  /** { CODIGO: unidades de la moneda principal por 1 unidad de esa divisa } */
+  exchangeRates: Record<string, number>;
   income: number;
   expense: number;
   /** Volumen movido entre cuentas propias: no es gasto ni ingreso */

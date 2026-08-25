@@ -28,26 +28,27 @@ export async function POST(req: Request) {
     const concept = (parsed.data.concept || "esta compra").trim();
 
     const dashboard = await buildDashboard(user.id);
-    const simulation = simulatePurchase(amount, dashboard.safeToSpend);
+    const currency = dashboard.currency;
+    const simulation = simulatePurchase(amount, dashboard.safeToSpend, currency);
 
     const goalsAtRisk = dashboard.goals
       .filter((g) => (g.status || "activa") === "activa" && (g.monthly_contribution || 0) > 0)
       .slice(0, 3)
-      .map((g) => `${g.title} (${formatCurrency(g.monthly_contribution || 0)}/mes)`);
+      .map((g) => `${g.title} (${formatCurrency(g.monthly_contribution || 0, currency)}/mes)`);
 
     let explanation = "";
     try {
       explanation = await askAi(
         "Eres un asesor financiero personal español. NO calculas: te dan las cifras ya calculadas y las explicas con claridad. Máximo 3 frases, tono cercano, siempre con las cifras que te dan.",
-        `El usuario quiere gastar ${formatCurrency(amount)} en "${concept}".
+        `El usuario quiere gastar ${formatCurrency(amount, currency)} en "${concept}".
 Cifras calculadas por el motor financiero (no las cambies):
 - Veredicto: ${simulation.verdict} (${simulation.headline})
-- Disponible ahora: ${formatCurrency(dashboard.safeToSpend.available)} ${dashboard.safeToSpend.horizonLabel}
-- Quedaría disponible: ${formatCurrency(simulation.remaining)}
-- Límite diario actual: ${formatCurrency(dashboard.safeToSpend.dailyLimit)}
+- Disponible ahora: ${formatCurrency(dashboard.safeToSpend.available, currency)} ${dashboard.safeToSpend.horizonLabel}
+- Quedaría disponible: ${formatCurrency(simulation.remaining, currency)}
+- Límite diario actual: ${formatCurrency(dashboard.safeToSpend.dailyLimit, currency)}
 - Días de espera sugeridos: ${simulation.waitDays}
 - Metas activas: ${goalsAtRisk.join("; ") || "ninguna"}
-- Presupuesto del mes: ${formatCurrency(dashboard.budgetTotal)} (gastado ${formatCurrency(dashboard.budgetSpent)})
+- Presupuesto del mes: ${formatCurrency(dashboard.budgetTotal, currency)} (gastado ${formatCurrency(dashboard.budgetSpent, currency)})
 
 Explícale el resultado y qué debería hacer.`,
         { maxTokens: 260, temperature: 0.4 }
