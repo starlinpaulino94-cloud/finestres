@@ -4,9 +4,9 @@ import { askAi, buildDashboard, formatCurrency, getSessionUser, serializeError }
 import { round2, simulatePurchase } from "@/lib/finance-core";
 
 const schema = z.object({
-  amount: z.number().positive(),
-  concept: z.string().optional(),
-});
+  amount: z.number().finite().positive().max(1_000_000_000),
+  concept: z.string().trim().max(180).optional(),
+}).strict();
 
 /**
  * Simulador de compras: "¿puedo permitirme X?".
@@ -56,7 +56,7 @@ Explícale el resultado y qué debería hacer.`,
       console.error("[API] /api/simulate explicación IA no disponible:", aiErr);
     }
 
-    console.log("[API] simulación de compra:", { amount, verdict: simulation.verdict, remaining: simulation.remaining });
+    console.info("[API] simulación completada", { verdict: simulation.verdict });
 
     return NextResponse.json({
       ok: true,

@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { totalumSdk } from "@/lib/totalum";
 import {
   computeBudgets,
+  deriveAccountBalances,
   computeHealthScore,
   computeNetWorth,
   computeSafeToSpend,
@@ -67,7 +68,7 @@ export async function assertOwner(table: string, id: string, userId: string): Pr
     if (!record) return { ok: false, status: 404, message: "No existe ese registro" };
     const owner = typeof record.user === "object" && record.user ? record.user._id : record.user;
     if (String(owner) !== String(userId)) {
-      console.warn("[security] intento de acceso a un registro de otro usuario:", { table, id, userId });
+      console.warn("[security] acceso a registro ajeno rechazado", { table, id });
       return { ok: false, status: 403, message: "Ese registro no es tuyo" };
     }
     return { ok: true, record };
@@ -77,14 +78,74 @@ export async function assertOwner(table: string, id: string, userId: string): Pr
   }
 }
 
+export interface OwnedReference {
+  table: string;
+  id?: string | null;
+  label: string;
+}
+
+/** Valida las relaciones recibidas del cliente antes de persistirlas. */
+export async function assertOwnedReferences(
+  userId: string,
+  references: OwnedReference[]
+): Promise<OwnerCheck> {
+  for (const reference of references) {
+    if (!reference.id) continue;
+    const check = await assertOwner(reference.table, reference.id, userId);
+    if (!check.ok) {
+      return {
+        ok: false,
+        status: check.status,
+        message: `${reference.label}: ${check.message || "referencia no válida"}`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
+/** Activa el ledger derivado conservando el saldo actual como snapshot inicial. */
+export async function ensureBalanceTracking(userId: string, accountIds: (string | null | undefined)[]) {
+  for (const id of new Set(accountIds.filter((value): value is string => Boolean(value)))) {
+    const check = await assertOwner("bank_account", id, userId);
+    if (!check.ok) return check;
+    if (!check.record.balance_as_of) {
+      await totalumSdk.crud.editRecordById("bank_account", id, { balance_as_of: new Date() });
+    }
+  }
+  return { ok: true } as OwnerCheck;
+}
+
 export function serializeError(err: unknown) {
   const e = err as any;
+  const publicError = ["VoiceRequestError", "AssistantActionError"].includes(String(e?.name || ""));
   return {
-    message: e?.message ?? "Error desconocido",
-    code: e?.code ?? null,
-    status: e?.response?.status ?? null,
-    responseData: e?.response?.data ?? null,
+    message:
+      process.env.NODE_ENV !== "production" || publicError
+        ? String(e?.message || "Error desconocido")
+        : "No se pudo completar la operación",
+    code: typeof e?.code === "string" ? e.code.slice(0, 80) : null,
   };
+}
+
+/** Consulta paginada para evitar cálculos o exportaciones silenciosamente truncados. */
+export async function queryAllRecords(
+  table: string,
+  options: Record<string, unknown>,
+  pageSize = 500,
+  maxRows = 20_000
+): Promise<any[]> {
+  const rows: any[] = [];
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const response = await totalumSdk.crud.query(table, {
+      ...options,
+      _limit: pageSize,
+      _offset: offset,
+    } as any);
+    const page = (response.data as any[]) || [];
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+  throw new Error(`La consulta de ${table} supera el límite seguro de ${maxRows} registros`);
 }
 
 /** ------------------------------------------------------------------
@@ -163,11 +224,11 @@ export async function bootstrapUserData(userId: string): Promise<{ created: bool
   });
 
   if ((existing.data as any[])?.length > 0) {
-    console.log("[finance] categorías ya creadas, no hay nada que preparar:", userId);
+    console.info("[finance] catálogo ya preparado");
     return { created: false };
   }
 
-  console.log("[finance] preparando el catálogo de categorías para:", userId);
+  console.info("[finance] preparando catálogo inicial");
 
   for (const cat of DEFAULT_CATEGORIES) {
     await totalumSdk.crud.createRecord("category", {
@@ -188,7 +249,7 @@ export async function bootstrapUserData(userId: string): Promise<{ created: bool
     user: userId,
   });
 
-  console.log("[finance] catálogo listo:", DEFAULT_CATEGORIES.length, "categorías para", userId);
+  console.info("[finance] catálogo listo", { categories: DEFAULT_CATEGORIES.length });
   return { created: true };
 }
 
@@ -224,7 +285,7 @@ export async function refreshBudgetAlerts(userId: string, budgets: BudgetProgres
       category: b.category._id,
       budget: b._id,
     });
-    console.log("[finance] alert created:", title);
+    console.info("[finance] alerta de presupuesto creada");
   }
 }
 
@@ -236,13 +297,13 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
   const month = monthKey(now);
   const from = addMonths(now, -5);
 
-  const [txRes, budgetsRes, goalsRes, outingsRes, accountsRes, notifRes] = await Promise.all([
-    totalumSdk.crud.query("transaction", {
-      _filter: { user: userId, spent_at: { gte: from.toISOString() } },
+  const [transactions, budgetsRes, goalsRes, outingsRes, accountsRes, notifRes] = await Promise.all([
+    queryAllRecords("transaction", {
+      _filter: { user: userId },
       _sort: { spent_at: "desc" },
-      _limit: 1000,
       category: true,
       bank_account: true,
+      transfer_account: true,
     }),
     totalumSdk.crud.query("budget", {
       _filter: { user: userId, month },
@@ -267,8 +328,10 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
     }),
   ]);
 
-  const transactions = ((txRes.data as any[]) || []) as Transaction[];
-  const monthTx = transactions.filter((t) => monthKey(new Date(t.spent_at)) === month);
+  const transactionRows = (transactions as Transaction[]).filter(
+    (transaction) => new Date(transaction.spent_at) >= from
+  );
+  const monthTx = transactionRows.filter((t) => monthKey(new Date(t.spent_at)) === month);
 
   // Todos los importes salen del núcleo determinista (src/lib/finance-core.ts):
   // las transferencias, los pagos de tarjeta y los ajustes NUNCA cuentan como
@@ -330,7 +393,7 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
   const monthlySeries = Array.from({ length: 6 }, (_, i) => {
     const d = addMonths(now, -(5 - i));
     const key = monthKey(d);
-    const rows = transactions.filter((t) => monthKey(new Date(t.spent_at)) === key);
+    const rows = transactionRows.filter((t) => monthKey(new Date(t.spent_at)) === key);
     const totals = computeTotals(rows as any);
     return {
       month: key,
@@ -360,7 +423,10 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
   const budgetSpent = sumMoney(budgets.map((b) => b.spent));
   const daysLeft = Math.max(totalDays - now.getDate() + 1, 1);
 
-  const accounts = ((accountsRes.data as any[]) || []) as any[];
+  const accounts = deriveAccountBalances(
+    ((accountsRes.data as any[]) || []) as any[],
+    transactions as any[]
+  );
   const outings = (((outingsRes.data as any[]) || []) as any[]).filter((o) => o.status !== "cancelada");
 
   // Patrimonio neto = activos − pasivos (las tarjetas en negativo son deuda)
@@ -377,7 +443,7 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
     budgetSpent,
     goals,
     plannedOutings: outings,
-    incomeDates: transactions.filter((t) => isIncome(t.kind)).map((t) => t.spent_at),
+    incomeDates: transactionRows.filter((t) => isIncome(t.kind)).map((t) => t.spent_at),
   });
 
   const pastMonths = monthlySeries.filter((m) => m.month !== month && m.expense > 0);
@@ -422,7 +488,7 @@ export async function buildDashboard(userId: string): Promise<DashboardData> {
     dailySeries,
     goals: goals as any,
     outings: outings as any,
-    recentTransactions: transactions.slice(0, 12),
+    recentTransactions: transactionRows.slice(0, 12),
     accounts: accounts as any,
     notifications: notifications as any,
     unreadCount: notifications.filter((n) => n.is_read !== "yes").length,
@@ -459,7 +525,7 @@ export function extractJson<T>(text: string): T | null {
   try {
     return JSON.parse(cleaned.slice(start, end + 1)) as T;
   } catch (err) {
-    console.error("[finance] extractJson failed:", err, cleaned.slice(0, 400));
+    console.warn("[finance] respuesta JSON de IA no válida", { name: (err as Error)?.name });
     return null;
   }
 }
@@ -532,6 +598,6 @@ export async function findOrCreateCategory(
   });
   const created = res.data as any;
   categories.push({ _id: created._id, name: created.name, kind });
-  console.log("[finance] category created on the fly:", created.name);
+  console.info("[finance] categoría automática creada", { id: created._id });
   return created._id;
 }

@@ -3,25 +3,41 @@ import type { NextRequest } from "next/server";
 
 const isProduction = process.env.NODE_ENV === "production";
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
-// Extract origin from app URL (e.g. "https://my-app.com" from "https://my-app.com/")
-const appOrigin = appUrl ? new URL(appUrl).origin : "";
+
+function parseOrigins(values: string[]): Set<string> {
+  const origins = new Set<string>();
+  for (const value of values.map((item) => item.trim()).filter(Boolean)) {
+    try {
+      const url = new URL(value);
+      if (url.protocol === "http:" || url.protocol === "https:") origins.add(url.origin);
+    } catch {
+      console.warn("[security] origen ignorado por formato inválido");
+    }
+  }
+  return origins;
+}
+
+const trustedOrigins = parseOrigins([
+  appUrl,
+  ...(process.env.TRUSTED_APP_ORIGINS || "").split(","),
+]);
+const trustedFrameAncestors = [...parseOrigins((process.env.TRUSTED_FRAME_ANCESTORS || "").split(","))];
 
 /**
  * Check if an origin is allowed for CORS
- * - Development: any origin
- * - Production: NEXT_PUBLIC_APP_URL, *.totalum-project.com, *.webapp-project.com,
- *   or same-host (custom domains)
+ * - Development: localhost o un origen configurado explícitamente.
+ * - Production: solo NEXT_PUBLIC_APP_URL y TRUSTED_APP_ORIGINS.
  */
-function isAllowedOrigin(origin: string, request: NextRequest): boolean {
-  if (!isProduction) return true;
-  if (appOrigin && origin === appOrigin) return true;
-  if (/^https:\/\/[^/]+\.(totalum-project|webapp-project)\.com$/.test(origin)) return true;
+function isAllowedOrigin(origin: string): boolean {
+  if (trustedOrigins.has(origin)) return true;
+  if (isProduction) return false;
 
-  // Trust same-host requests — custom domains served by this same worker
-  const host = request.headers.get("host");
-  if (host && origin === `https://${host}`) return true;
-
-  return false;
+  try {
+    const hostname = new URL(origin).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
 }
 
 // Public routes that don't require authentication
@@ -31,18 +47,13 @@ const publicRoutes = [
   "/register",
   "/privacy-policy",
   "/terms-of-service",
-
-  //stripe routes here
-  "/stripe/demo",
-  "/stripe/success",
-  "/stripe/cancel",
 ];
 
 // Add CORS headers if the origin is allowed
 function addCorsHeaders(response: NextResponse, request: NextRequest) {
   const origin = request.headers.get("origin");
 
-  if (origin && isAllowedOrigin(origin, request)) {
+  if (origin && isAllowedOrigin(origin)) {
     response.headers.set("Access-Control-Allow-Origin", origin);
     response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
     response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
@@ -54,10 +65,36 @@ function addCorsHeaders(response: NextResponse, request: NextRequest) {
   return response;
 }
 
-// Set CSP to allow iframe embedding from any domain and remove X-Frame-Options
-function addCspHeaders(response: NextResponse) {
-  response.headers.set("Content-Security-Policy", "frame-ancestors *");
-  response.headers.delete("X-Frame-Options");
+// CSP y cabeceras defensivas; el embedding requiere un ancestro configurado.
+function addSecurityHeaders(response: NextResponse) {
+  const frameAncestors = ["'self'", ...trustedFrameAncestors].join(" ");
+  const directives = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    `frame-ancestors ${frameAncestors}`,
+    "frame-src 'none'",
+    "form-action 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "media-src 'self' blob:",
+    "worker-src 'self' blob:",
+    ...(isProduction ? ["upgrade-insecure-requests"] : []),
+  ];
+
+  response.headers.set("Content-Security-Policy", directives.join("; "));
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set(
+    "Permissions-Policy",
+    "camera=(), geolocation=(), microphone=(self), payment=(), publickey-credentials-create=(self), publickey-credentials-get=(self)"
+  );
+  if (isProduction) {
+    response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
   return response;
 }
 
@@ -66,9 +103,13 @@ export async function middleware(request: NextRequest) {
 
   // Handle CORS preflight requests
   if (request.method === "OPTIONS") {
+    const origin = request.headers.get("origin");
+    if (origin && !isAllowedOrigin(origin)) {
+      return NextResponse.json({ ok: false, error: { message: "Origen no permitido" } }, { status: 403 });
+    }
     const response = new NextResponse(null, { status: 204 });
     addCorsHeaders(response, request);
-    addCspHeaders(response);
+    addSecurityHeaders(response);
     return response;
   }
 
@@ -77,7 +118,7 @@ export async function middleware(request: NextRequest) {
 
   // Add CORS and CSP headers
   addCorsHeaders(response, request);
-  addCspHeaders(response);
+  addSecurityHeaders(response);
 
   // Allow all API routes and static files
   if (
@@ -105,7 +146,7 @@ export async function middleware(request: NextRequest) {
     loginUrl.searchParams.set("redirect", pathname);
     const redirectResponse = NextResponse.redirect(loginUrl);
     addCorsHeaders(redirectResponse, request);
-    addCspHeaders(redirectResponse);
+    addSecurityHeaders(redirectResponse);
     return redirectResponse;
   }
 

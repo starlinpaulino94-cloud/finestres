@@ -1,20 +1,20 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { totalumSdk } from "@/lib/totalum";
-import { getSessionUser, serializeError } from "@/lib/finance";
+import { assertOwnedReferences, ensureBalanceTracking, getSessionUser, serializeError } from "@/lib/finance";
 import { kindMeta, round2 } from "@/lib/finance-core";
 
 const schema = z.object({
-  concept: z.string().min(1),
-  amount: z.number().positive(),
+  concept: z.string().trim().min(1).max(180),
+  amount: z.number().finite().positive().max(1_000_000_000),
   kind: z.enum(["gasto", "ingreso", "transferencia", "pago_tarjeta", "ajuste"]),
-  spent_at: z.string().optional(),
-  category: z.string().optional(),
-  bank_account: z.string().optional(),
+  spent_at: z.string().refine((value) => !Number.isNaN(new Date(value).getTime()), "Fecha no válida").optional(),
+  category: z.string().min(1).max(120).optional(),
+  bank_account: z.string().min(1).max(120).optional(),
   /** Cuenta destino: obligatoria en transferencias y pagos de tarjeta */
-  transfer_account: z.string().optional(),
-  notes: z.string().optional(),
-});
+  transfer_account: z.string().min(1).max(120).optional(),
+  notes: z.string().trim().max(1200).optional(),
+}).strict();
 
 export async function GET(req: Request) {
   try {
@@ -82,6 +82,26 @@ export async function POST(req: Request) {
       }
     }
 
+    const references = await assertOwnedReferences(user.id, [
+      { table: "category", id: data.category, label: "Categoría" },
+      { table: "bank_account", id: data.bank_account, label: "Cuenta de origen" },
+      { table: "bank_account", id: data.transfer_account, label: "Cuenta de destino" },
+    ]);
+    if (!references.ok) {
+      return NextResponse.json(
+        { ok: false, error: { message: references.message } },
+        { status: references.status || 400 }
+      );
+    }
+
+    const tracking = await ensureBalanceTracking(user.id, [data.bank_account, data.transfer_account]);
+    if (!tracking.ok) {
+      return NextResponse.json(
+        { ok: false, error: { message: tracking.message } },
+        { status: tracking.status || 400 }
+      );
+    }
+
     const res = await totalumSdk.crud.createRecord("transaction", {
       concept: data.concept,
       amount: round2(data.amount),
@@ -89,6 +109,7 @@ export async function POST(req: Request) {
       spent_at: data.spent_at ? new Date(data.spent_at) : new Date(),
       source: "manual",
       auto_categorized: "no",
+      balance_effective_at: new Date(),
       notes: data.notes,
       // Los movimientos internos no llevan categoría de gasto
       ...(data.category && !meta.needsDestination ? { category: data.category } : {}),
@@ -96,7 +117,7 @@ export async function POST(req: Request) {
       ...(meta.needsDestination && data.transfer_account ? { transfer_account: data.transfer_account } : {}),
       user: user.id,
     });
-    console.log("[API] movimiento creado:", (res.data as any)?._id, data.kind, data.concept, round2(data.amount));
+    console.info("[API] movimiento creado", { id: (res.data as any)?._id, kind: data.kind });
     return NextResponse.json({ ok: true, data: res.data });
   } catch (err) {
     console.error("[API ERROR] POST /api/transactions", err);

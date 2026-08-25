@@ -26,7 +26,7 @@ module.exports = function totalumSourceTags(source) {
     let ts;
     try {
         ts = require("typescript");
-    } catch (error) {
+    } catch {
         return source;
     }
 
@@ -43,7 +43,7 @@ module.exports = function totalumSourceTags(source) {
     let sourceFile;
     try {
         sourceFile = ts.createSourceFile(resourcePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-    } catch (error) {
+    } catch {
         return source;
     }
 
@@ -71,7 +71,7 @@ module.exports = function totalumSourceTags(source) {
 
     try {
         visit(sourceFile);
-    } catch (error) {
+    } catch {
         return source;
     }
 

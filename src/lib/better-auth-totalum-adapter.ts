@@ -1,6 +1,6 @@
 import "server-only";
 import { TotalumApiSdk } from "totalum-api-sdk";
-import type { Adapter } from "better-auth";
+import type { DBAdapter } from "better-auth";
 import { createAdapterFactory } from "better-auth/adapters";
 
 // ==================== Type Definitions ====================
@@ -257,7 +257,7 @@ export function totalumAdapter(
 ) {
   const { debugLogs = false } = config;
 
-  const log = (...args: any[]) => {
+  const log = (..._args: any[]) => {
     if (debugLogs) {
       // SUPER IMPORTANT: THIS LINE IS COMMENTED BECAUSE IT GENERATES A LOT OF LOGS AND CONTAMINATES THE OUTPUT. ONLY UNCOMMENT IF SOMETHING ON AUTH IS NOT WORKING AND YOU NEED TO DEBUG IT.
       //console.log("[Totalum Adapter]", ...args);
@@ -559,6 +559,49 @@ export function totalumAdapter(
         },
 
         /**
+         * Totalum no expone una primitiva compare-and-delete. Este fallback
+         * mantiene la semántica funcional que Better Auth 1.7 exige, aunque
+         * no puede garantizar exclusión entre dos procesos distintos.
+         */
+        async consumeOne<T>(data: { model: string; where: Where[] }): Promise<T | null> {
+          const tableName = getTableName(data.model);
+          const filter = convertWhereToQueryFilter(data.where);
+          const response = await client.crud.query(tableName, {
+            ...(Object.keys(filter).length > 0 ? { _filter: filter } : {}),
+            _limit: 1,
+          });
+          const record = (unwrapTotalumResponse<any[]>(response) || [])[0];
+          if (!record) return null;
+          await client.crud.deleteRecordById(tableName, record._id);
+          return objectToCamelCase(record) as T;
+        },
+
+        /** Fallback secuencial para contadores; véase consumeOne. */
+        async incrementOne<T>(data: {
+          model: string;
+          where: Where[];
+          increment: Record<string, number>;
+          set?: Record<string, unknown>;
+        }): Promise<T | null> {
+          const tableName = getTableName(data.model);
+          const filter = convertWhereToQueryFilter(data.where);
+          const response = await client.crud.query(tableName, {
+            ...(Object.keys(filter).length > 0 ? { _filter: filter } : {}),
+            _limit: 1,
+          });
+          const record = (unwrapTotalumResponse<any[]>(response) || [])[0];
+          if (!record) return null;
+          const update = objectToSnakeCase(data.set || {});
+          for (const [field, delta] of Object.entries(data.increment)) {
+            const storageField = field === "id" ? "_id" : toSnakeCase(field);
+            update[storageField] = Number(record[storageField] || 0) + delta;
+          }
+          const edited = await client.crud.editRecordById(tableName, record._id, update);
+          const updated = unwrapTotalumResponse(edited);
+          return updated ? objectToCamelCase(updated) as T : null;
+        },
+
+        /**
          * Transaction support (fallback to sequential operations)
          * Note: Totalum doesn't support real transactions, so we execute operations sequentially
          */
@@ -577,6 +620,8 @@ export function totalumAdapter(
               updateMany: this.updateMany,
               delete: this.delete,
               deleteMany: this.deleteMany,
+              consumeOne: this.consumeOne,
+              incrementOne: this.incrementOne,
             });
 
             log("TRANSACTION: Completed successfully");
@@ -586,7 +631,7 @@ export function totalumAdapter(
             throw error;
           }
         },
-      } satisfies Adapter;
+      } satisfies DBAdapter;
     },
   });
 }

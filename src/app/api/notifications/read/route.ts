@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { totalumSdk } from "@/lib/totalum";
-import { assertOwner, getSessionUser, serializeError } from "@/lib/finance";
+import { assertOwner, getSessionUser, queryAllRecords, serializeError } from "@/lib/finance";
+
+const schema = z.object({ id: z.string().min(1).max(120).optional() }).strict();
 
 /** Marks one notification (id) or every unread notification as read */
 export async function POST(req: Request) {
@@ -8,7 +11,11 @@ export async function POST(req: Request) {
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ ok: false, error: { message: "No autenticado" } }, { status: 401 });
 
-    const body = (await req.json().catch(() => ({}))) as { id?: string };
+    const parsed = schema.safeParse(await req.json().catch(() => ({})));
+    if (!parsed.success) {
+      return NextResponse.json({ ok: false, error: parsed.error.flatten() }, { status: 400 });
+    }
+    const body = parsed.data;
 
     if (body.id) {
       const owner = await assertOwner("notification", body.id, user.id);
@@ -20,11 +27,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, data: { updated: 1 } });
     }
 
-    const pending = await totalumSdk.crud.query("notification", {
+    const rows = await queryAllRecords("notification", {
       _filter: { user: user.id, is_read: { ne: "yes" } },
-      _limit: 100,
     });
-    const rows = (pending.data as any[]) || [];
     for (const row of rows) {
       await totalumSdk.crud.editRecordById("notification", row._id, { is_read: "yes" });
     }

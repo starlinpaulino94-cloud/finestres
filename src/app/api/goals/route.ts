@@ -4,12 +4,12 @@ import { totalumSdk } from "@/lib/totalum";
 import { askAi, getSessionUser, serializeError } from "@/lib/finance";
 
 const schema = z.object({
-  title: z.string().min(1),
-  target_amount: z.number().positive(),
-  saved_amount: z.number().min(0).optional(),
-  deadline: z.string().optional(),
-  notes: z.string().optional(),
-});
+  title: z.string().trim().min(1).max(180),
+  target_amount: z.number().finite().positive().max(1_000_000_000),
+  saved_amount: z.number().finite().min(0).max(1_000_000_000).optional(),
+  deadline: z.string().refine((value) => !Number.isNaN(new Date(value).getTime()), "Fecha no válida").optional(),
+  notes: z.string().trim().max(1200).optional(),
+}).strict();
 
 export async function GET() {
   try {
@@ -86,7 +86,7 @@ export async function POST(req: Request) {
       });
     }
 
-    console.log("[API] meta creada:", (res.data as any)?._id, data.title);
+    console.info("[API] meta creada", { id: (res.data as any)?._id });
     return NextResponse.json({ ok: true, data: { goal: res.data, advice, monthlyContribution } });
   } catch (err) {
     console.error("[API ERROR] POST /api/goals", err);

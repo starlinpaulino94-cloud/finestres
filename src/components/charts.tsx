@@ -110,12 +110,14 @@ export function CategoryDonut({
   const C = 2 * Math.PI * R;
 
   const segments = useMemo(() => {
-    let offset = 0;
-    return data.slice(0, 7).map((d) => {
+    const visible = data.slice(0, 7);
+    return visible.map((d, index) => {
       const fraction = total > 0 ? d.amount / total : 0;
-      const seg = { ...d, fraction, dash: fraction * C, offset };
-      offset += fraction * C;
-      return seg;
+      const offset = visible.slice(0, index).reduce(
+        (sum, previous) => sum + (total > 0 ? previous.amount / total : 0) * C,
+        0
+      );
+      return { ...d, fraction, dash: fraction * C, offset };
     });
   }, [data, total, C]);
 

@@ -2,6 +2,13 @@
 
 import { useEffect } from 'react';
 
+const allowedEditorOrigins = new Set(
+  (process.env.NEXT_PUBLIC_EDITOR_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
+
 /**
  * ScriptExecutor Component
  * Listens for postMessage events from parent window (Angular totalum-frontend)
@@ -15,6 +22,10 @@ export function ScriptExecutor() {
     }
 
     const handleMessage = (event: MessageEvent) => {
+      if (event.source !== window.parent || !allowedEditorOrigins.has(event.origin)) {
+        return;
+      }
+      if (!event.data || typeof event.data !== "object") return;
       const { type, code, styles, id } = event.data;
 
       // Handle script injection

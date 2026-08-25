@@ -5,6 +5,7 @@ import {
   buildDashboard,
   formatCurrency,
   getSessionUser,
+  queryAllRecords,
   serializeError,
 } from "@/lib/finance";
 import { computeTotals, isExpense } from "@/lib/finance-core";
@@ -26,17 +27,15 @@ export async function POST(req: Request) {
     const prevStart = new Date(start);
     prevStart.setDate(prevStart.getDate() - 7);
 
-    const [txRes, dashboard] = await Promise.all([
-      totalumSdk.crud.query("transaction", {
+    const [all, dashboard] = await Promise.all([
+      queryAllRecords("transaction", {
         _filter: { user: user.id, spent_at: { gte: prevStart.toISOString() } },
         _sort: { spent_at: "desc" },
-        _limit: 500,
         category: true,
       }),
       buildDashboard(user.id),
     ]);
 
-    const all = ((txRes.data as any[]) || []);
     const week = all.filter((t) => new Date(t.spent_at) >= start);
     const prevWeek = all.filter((t) => new Date(t.spent_at) < start);
 
@@ -174,7 +173,7 @@ Escribe un informe semanal en español con este formato exacto:
       user: user.id,
     });
 
-    console.log("[API] informe semanal generado:", reportId, { totalSpent, emailSent, pdf: !!pdfFileName });
+    console.info("[API] informe semanal generado", { reportId, emailSent, pdf: Boolean(pdfFileName) });
 
     return NextResponse.json({
       ok: true,

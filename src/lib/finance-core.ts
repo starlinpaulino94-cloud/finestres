@@ -181,6 +181,56 @@ export interface AccountLike {
   name?: string;
   account_type?: string | null;
   balance?: number | null;
+  /** Momento en que `balance` fue confirmado como snapshot real. */
+  balance_as_of?: string | Date | null;
+}
+
+export interface AccountMovementLike {
+  amount?: number | null;
+  kind?: string | null;
+  bank_account?: string | { _id?: string } | null;
+  transfer_account?: string | { _id?: string } | null;
+  createdAt?: string | Date | null;
+  balance_effective_at?: string | Date | null;
+}
+
+function relatedId(value: AccountMovementLike["bank_account"]): string | null {
+  if (typeof value === "string") return value;
+  return value && typeof value === "object" && value._id ? String(value._id) : null;
+}
+
+/**
+ * Deriva el saldo actual desde el último snapshot confirmado. Al no escribir
+ * saldos por cada movimiento, crear/editar/eliminar sigue siendo reversible y
+ * no depende de una transacción multi-registro que Totalum no ofrece.
+ */
+export function deriveAccountBalances<T extends AccountLike>(
+  accounts: T[],
+  movements: AccountMovementLike[]
+): T[] {
+  return accounts.map((account) => {
+    const asOf = account.balance_as_of ? new Date(account.balance_as_of).getTime() : Number.NaN;
+    if (!account._id || Number.isNaN(asOf)) return { ...account };
+    let balance = round2(account.balance);
+    for (const movement of movements) {
+      const effectiveValue = movement.balance_effective_at || movement.createdAt;
+      if (!effectiveValue) continue;
+      const effectiveAt = new Date(effectiveValue).getTime();
+      if (Number.isNaN(effectiveAt) || effectiveAt <= asOf) continue;
+      const amount = round2(movement.amount);
+      const origin = relatedId(movement.bank_account);
+      const destination = relatedId(movement.transfer_account);
+      const meta = kindMeta(movement.kind);
+      if (origin === account._id) {
+        if (meta.expense || meta.needsDestination) balance = round2(balance - amount);
+        else if (meta.income) balance = round2(balance + amount);
+      }
+      if (meta.needsDestination && destination === account._id) {
+        balance = round2(balance + amount);
+      }
+    }
+    return { ...account, balance };
+  });
 }
 
 export function isCreditCard(account: AccountLike): boolean {

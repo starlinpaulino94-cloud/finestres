@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { totalumSdk } from "@/lib/totalum";
 import { assertOwner, getSessionUser, serializeError } from "@/lib/finance";
+
+const schema = z.object({
+  status: z.enum(["planificada", "realizada", "cancelada"]).optional(),
+  real_cost: z.number().finite().min(0).max(1_000_000_000).optional(),
+  estimated_cost: z.number().finite().min(0).max(1_000_000_000).optional(),
+  planned_at: z.string().refine((value) => !Number.isNaN(new Date(value).getTime()), "Fecha no válida").optional(),
+  title: z.string().trim().min(1).max(180).optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, "No hay cambios que aplicar");
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -12,7 +21,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (!owner.ok) {
       return NextResponse.json({ ok: false, error: { message: owner.message } }, { status: owner.status || 403 });
     }
-    const body = (await req.json().catch(() => ({}))) as Record<string, any>;
+    const parsed = schema.safeParse(await req.json().catch(() => ({})));
+    if (!parsed.success) {
+      return NextResponse.json({ ok: false, error: parsed.error.flatten() }, { status: 400 });
+    }
+    const body = parsed.data;
 
     const update: Record<string, any> = {};
     if (body.status !== undefined) update.status = body.status;
@@ -22,7 +35,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (body.title !== undefined) update.title = body.title;
 
     const res = await totalumSdk.crud.editRecordById("outing_plan", id, update);
-    console.log("[API] salida actualizada:", id, update);
+    console.info("[API] salida actualizada", { id, fields: Object.keys(update) });
     return NextResponse.json({ ok: true, data: res.data });
   } catch (err) {
     console.error("[API ERROR] PUT /api/outings/[id]", err);

@@ -28,6 +28,7 @@ export interface BankAccount {
   account_type?: "cuenta" | "tarjeta_credito" | "tarjeta_debito" | "efectivo";
   last_four?: string;
   balance?: number;
+  balance_as_of?: string;
   currency?: string;
 }
 
@@ -45,6 +46,7 @@ export interface Transaction {
   bank_account?: BankAccount | string | null;
   /** Cuenta destino en transferencias y pagos de tarjeta */
   transfer_account?: BankAccount | string | null;
+  balance_effective_at?: string;
   createdAt?: string;
 }
 
@@ -102,7 +104,7 @@ export interface VoiceNote {
   title?: string;
   transcription?: string;
   ai_summary?: string;
-  status?: "procesada" | "error";
+  status?: "pendiente_confirmacion" | "procesando" | "procesada" | "error_confirmacion" | "cancelada" | "error";
   createdAt?: string;
   audio_file?: { name: string; url?: string } | null;
 }

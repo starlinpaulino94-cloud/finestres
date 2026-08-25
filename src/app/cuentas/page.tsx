@@ -119,7 +119,7 @@ export default function CuentasPage() {
       <PageHeader
         eyebrow="cuentas y tarjetas"
         title="Tus cuentas y tarjetas"
-        description="Agrupa tus movimientos por cuenta y mantén su saldo al día. Los gastos entran por nota de voz o a mano, en segundos."
+        description="Confirma el saldo real cuando quieras; desde ese snapshot, la app deriva automáticamente los movimientos posteriores de cada cuenta."
         action={
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>

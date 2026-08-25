@@ -12,10 +12,10 @@ import {
 import { clamp, round2 } from "@/lib/finance-core";
 
 const schema = z.object({
-  title: z.string().min(1),
-  planned_at: z.string().optional(),
-  estimated_cost: z.number().min(0).optional(),
-});
+  title: z.string().trim().min(1).max(180),
+  planned_at: z.string().refine((value) => !Number.isNaN(new Date(value).getTime()), "Fecha no válida").optional(),
+  estimated_cost: z.number().finite().min(0).max(1_000_000_000).optional(),
+}).strict();
 
 export async function GET() {
   try {
@@ -133,7 +133,7 @@ Devuelve SOLO JSON: {"maximo_recomendado": number, "consejo": "2 o 3 frases en e
       });
     }
 
-    console.log("[API] salida planificada:", data.title, "máximo:", maxRecommended);
+    console.info("[API] salida planificada", { id: (res.data as any)?._id });
     return NextResponse.json({ ok: true, data: { outing: res.data, maxRecommended, advice } });
   } catch (err) {
     console.error("[API ERROR] POST /api/outings", err);

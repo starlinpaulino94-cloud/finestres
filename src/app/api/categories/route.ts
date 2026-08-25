@@ -4,11 +4,11 @@ import { totalumSdk } from "@/lib/totalum";
 import { getSessionUser, serializeError } from "@/lib/finance";
 
 const schema = z.object({
-  name: z.string().min(1),
+  name: z.string().trim().min(1).max(80),
   kind: z.enum(["gasto", "ingreso"]),
-  color: z.string().optional(),
-  emoji: z.string().optional(),
-});
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  emoji: z.string().trim().max(12).optional(),
+}).strict();
 
 export async function GET() {
   try {

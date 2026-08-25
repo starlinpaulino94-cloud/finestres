@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,9 +11,18 @@ import Link from "next/link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/dashboard";
+  const requestedRedirect = searchParams.get("redirect");
+  const redirect = (() => {
+    if (!requestedRedirect?.startsWith("/") || requestedRedirect.startsWith("//")) return "/dashboard";
+    try {
+      const parsed = new URL(requestedRedirect, "https://fintra.local");
+      if (parsed.origin !== "https://fintra.local") return "/dashboard";
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    } catch {
+      return "/dashboard";
+    }
+  })();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

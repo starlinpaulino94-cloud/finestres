@@ -33,6 +33,16 @@ function lastMonths(count: number) {
   });
 }
 
+function renderInline(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) =>
+    part.startsWith("**") && part.endsWith("**") ? (
+      <strong key={index}>{part.slice(2, -2)}</strong>
+    ) : (
+      <span key={index}>{part}</span>
+    )
+  );
+}
+
 /** Renderiza el informe (markdown ligero) que devuelve la IA */
 function ReportBody({ content }: { content: string }) {
   const blocks = content.split("\n").filter((l) => l.trim().length > 0);
@@ -51,20 +61,14 @@ function ReportBody({ content }: { content: string }) {
           return (
             <p key={i} className="flex gap-2 text-sm leading-relaxed text-muted-foreground">
               <span className="text-primary">·</span>
-              <span
-                dangerouslySetInnerHTML={{
-                  __html: clean.replace(/^[-*•]\s/, "").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>"),
-                }}
-              />
+              <span>{renderInline(clean.replace(/^[-*•]\s/, ""))}</span>
             </p>
           );
         }
         return (
-          <p
-            key={i}
-            className="text-sm leading-relaxed text-muted-foreground"
-            dangerouslySetInnerHTML={{ __html: clean.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>") }}
-          />
+          <p key={i} className="text-sm leading-relaxed text-muted-foreground">
+            {renderInline(clean)}
+          </p>
         );
       })}
     </div>

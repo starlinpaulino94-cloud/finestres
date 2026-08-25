@@ -270,7 +270,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     className="w-full rounded-xl"
                     onClick={async () => {
                       await signOut();
-                      window.location.href = "/";
+                      router.push("/");
+                      router.refresh();
                     }}
                   >
                     <LogOut className="mr-2 h-4 w-4" /> Cerrar sesión

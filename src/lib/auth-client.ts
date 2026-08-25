@@ -15,13 +15,27 @@ export const authClient = createAuthClient({
   },
 });
 
-// Export commonly used hooks and methods
+interface ClientSession {
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    image?: string | null;
+  };
+  session: Record<string, unknown>;
+}
+
+// Better Auth 1.7 no infiere la sesión con adaptadores externos desde el
+// cliente. Conservamos el contrato mínimo que realmente usa la interfaz.
+export const useSession = authClient.useSession as unknown as () => {
+  data: ClientSession | null;
+  isPending: boolean;
+};
+export const signIn = authClient.signIn;
+export const signUp = authClient.signUp;
+export const signOut = () => authClient.signOut({});
+
 export const {
-  signIn,
-  signUp,
-  signOut,
-  useSession,
-  $Infer,
   // ===========================================================================
   // PASSWORD RECOVERY - Uncomment when sendResetPassword is enabled in auth.ts
   // ===========================================================================

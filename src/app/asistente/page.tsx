@@ -1,25 +1,33 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, Send, Sparkles, Square, Loader2, Wand2 } from "lucide-react";
+import { Check, Mic, Send, Sparkles, Square, Loader2, Wand2, X } from "lucide-react";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { ensureBootstrap } from "@/lib/ensure-bootstrap";
+import { actionLabel, type AssistantActionResult, type ConfirmableAssistantPlan } from "@/lib/assistant-plan";
 import type { VoiceNote } from "@/types/finance";
 import { toast } from "sonner";
 
-interface VoiceResult {
+interface AssistantDraft {
+  draftId: string;
   transcription: string;
-  summary: string;
-  advice: string;
-  transactions: any[];
-  budgets: any[];
-  goals: any[];
-  outings: any[];
-  dailySafeSpend: number;
+  plan: ConfirmableAssistantPlan;
+  requiresConfirmation: true;
+}
+
+interface AssistantExecution {
+  draftId: string;
+  status: "completed";
+  results: AssistantActionResult[];
+  safeToSpend: { dailyLimit: number; available: number };
+}
+
+interface VoiceNoteWithDraft extends VoiceNote {
+  pendingDraft?: AssistantDraft;
 }
 
 const EXAMPLES = [
@@ -34,19 +42,24 @@ function money(v: number) {
 
 export default function AsistentePage() {
   const [recording, setRecording] = useState(false);
-  const [processing, setProcessing] = useState(false);
+  const [processing, setProcessing] = useState<"analyze" | "confirm" | "cancel" | null>(null);
   const [seconds, setSeconds] = useState(0);
   const [text, setText] = useState("");
-  const [result, setResult] = useState<VoiceResult | null>(null);
-  const [notes, setNotes] = useState<VoiceNote[]>([]);
+  const [draft, setDraft] = useState<AssistantDraft | null>(null);
+  const [execution, setExecution] = useState<AssistantExecution | null>(null);
+  const [notes, setNotes] = useState<VoiceNoteWithDraft[]>([]);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadNotes = useCallback(async () => {
-    const res = await api.get<VoiceNote[]>("/api/voice");
-    if (res.ok && res.data) setNotes(res.data);
+    const res = await api.get<VoiceNoteWithDraft[]>("/api/voice");
+    if (res.ok && res.data) {
+      setNotes(res.data);
+      const pendingDraft = res.data.find((note) => note.pendingDraft)?.pendingDraft;
+      if (pendingDraft) setDraft((current) => current || pendingDraft);
+    }
     else if (!res.ok) console.error("[Asistente] error cargando notas:", res.error);
   }, []);
 
@@ -62,10 +75,11 @@ export default function AsistentePage() {
 
   const send = useCallback(
     async (payload: { audioBase64?: string; filename?: string; text?: string }) => {
-      setProcessing(true);
-      setResult(null);
-      const res = await api.post<VoiceResult>("/api/voice", payload);
-      setProcessing(false);
+      setProcessing("analyze");
+      setDraft(null);
+      setExecution(null);
+      const res = await api.post<AssistantDraft>("/api/voice", { mode: "analyze", ...payload });
+      setProcessing(null);
 
       if (!res.ok || !res.data) {
         console.error("[Asistente] error procesando:", res.error);
@@ -73,17 +87,53 @@ export default function AsistentePage() {
         return;
       }
 
-      setResult(res.data);
+      setDraft(res.data);
       setText("");
-      const created =
-        res.data.transactions.length + res.data.budgets.length + res.data.goals.length + res.data.outings.length;
-      toast.success(created > 0 ? `He registrado ${created} elementos` : "Analizado");
-      console.log("[Asistente] resultado:", res.data);
-      window.dispatchEvent(new Event("fintra:refresh"));
+      toast.success(
+        res.data.plan.acciones.length > 0
+          ? `Borrador listo: revisa ${res.data.plan.acciones.length} acciones antes de confirmar`
+          : "Análisis listo; no se propusieron cambios"
+      );
       await loadNotes();
     },
     [loadNotes]
   );
+
+  const confirmDraft = useCallback(async () => {
+    if (!draft) return;
+    setProcessing("confirm");
+    const res = await api.post<AssistantExecution>("/api/voice", {
+      mode: "confirm",
+      draftId: draft.draftId,
+    });
+    setProcessing(null);
+    if (!res.ok || !res.data) {
+      toast.error(res.error?.message || "No se pudieron ejecutar las acciones");
+      return;
+    }
+    setExecution(res.data);
+    toast.success(`Confirmado: ${res.data.results.length} acciones completadas`);
+    window.dispatchEvent(new Event("fintra:refresh"));
+    await loadNotes();
+  }, [draft, loadNotes]);
+
+  const cancelDraft = useCallback(async () => {
+    if (!draft) return;
+    setProcessing("cancel");
+    const res = await api.post<{ status: "cancelled" }>("/api/voice", {
+      mode: "cancel",
+      draftId: draft.draftId,
+    });
+    setProcessing(null);
+    if (!res.ok) {
+      toast.error(res.error?.message || "No se pudo cancelar el borrador");
+      return;
+    }
+    setDraft(null);
+    setExecution(null);
+    toast.success("Borrador cancelado; no se aplicó ningún cambio");
+    await loadNotes();
+  }, [draft, loadNotes]);
 
   const startRecording = async () => {
     try {
@@ -135,7 +185,7 @@ export default function AsistentePage() {
       <PageHeader
         eyebrow="asistente de voz"
         title="Cuéntame tu día"
-        description="Graba una nota de voz con tus gastos, tu presupuesto, tus metas o las salidas que tienes previstas. Lo transcribo, lo entiendo y lo organizo todo automáticamente."
+        description="Escribe o habla con naturalidad. La IA puede proponer cambios en toda tu app, pero no ejecutará nada hasta que revises el borrador y pulses Confirmar."
       />
 
       <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
@@ -145,7 +195,7 @@ export default function AsistentePage() {
           <div className="relative flex flex-col items-center text-center">
             <button
               onClick={recording ? stopRecording : startRecording}
-              disabled={processing}
+              disabled={Boolean(processing)}
               className={`grid h-32 w-32 place-items-center rounded-full transition-all ${
                 recording
                   ? "bg-destructive text-white pulse-ring"
@@ -166,7 +216,7 @@ export default function AsistentePage() {
               {recording
                 ? `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
                 : processing
-                  ? "Procesando…"
+                  ? processing === "analyze" ? "Analizando…" : processing === "confirm" ? "Ejecutando…" : "Cancelando…"
                   : "Listo para escucharte"}
             </p>
             <p className="mt-2 max-w-sm text-sm text-muted-foreground">
@@ -189,7 +239,7 @@ export default function AsistentePage() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button
                   className="rounded-full"
-                  disabled={processing || !text.trim()}
+                  disabled={Boolean(processing) || !text.trim()}
                   onClick={() => send({ text: text.trim() })}
                 >
                   <Send className="mr-2 h-4 w-4" /> Enviar al asistente
@@ -210,50 +260,71 @@ export default function AsistentePage() {
 
         {/* Resultado */}
         <div className="space-y-4">
-          {result ? (
+          {draft ? (
             <Card className="rise rounded-3xl border-primary/30 bg-primary/[0.06] p-7">
               <p className="mb-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-primary">
-                <Sparkles className="h-3.5 w-3.5" /> Análisis del asistente
+                <Sparkles className="h-3.5 w-3.5" /> {execution ? "Acciones completadas" : "Borrador pendiente de confirmación"}
               </p>
-              {result.summary && <p className="text-base leading-relaxed">{result.summary}</p>}
-              {result.advice && (
+              {draft.plan.resumen && <p className="text-base leading-relaxed">{draft.plan.resumen}</p>}
+              {draft.plan.consejo && (
                 <p className="mt-4 whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
-                  {result.advice}
+                  {draft.plan.consejo}
                 </p>
               )}
 
-              <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {[
-                  { label: "Movimientos", value: result.transactions.length },
-                  { label: "Presupuestos", value: result.budgets.length },
-                  { label: "Metas", value: result.goals.length },
-                  { label: "Salidas", value: result.outings.length },
-                ].map((s) => (
-                  <div key={s.label} className="rounded-2xl border border-border bg-card px-4 py-3">
-                    <p className="tabular text-2xl font-semibold">{s.value}</p>
-                    <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{s.label}</p>
-                  </div>
-                ))}
-              </div>
-
               <div className="mt-5 rounded-2xl border border-border bg-card p-4">
-                <p className="text-xs text-muted-foreground">Máximo que puedes gastar hoy</p>
-                <p className="tabular mt-1 text-2xl font-semibold text-primary">{money(result.dailySafeSpend)}</p>
+                <p className="text-xs font-medium">
+                  {draft.plan.acciones.length} {draft.plan.acciones.length === 1 ? "acción propuesta" : "acciones propuestas"}
+                </p>
+                {draft.plan.acciones.length > 0 ? (
+                  <ol className="mt-3 space-y-2">
+                    {draft.plan.acciones.map((action, index) => {
+                      const completed = execution?.results.some((item) => item.actionId === action.actionId);
+                      return (
+                        <li key={action.actionId} className="flex gap-3 rounded-xl bg-secondary/70 px-3 py-2.5 text-sm">
+                          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-background text-xs">
+                            {completed ? <Check className="h-3.5 w-3.5 text-primary" /> : index + 1}
+                          </span>
+                          <span>{action.preview || actionLabel(action)}</span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                ) : (
+                  <p className="mt-2 text-sm text-muted-foreground">No hay cambios que ejecutar.</p>
+                )}
               </div>
 
-              {result.transactions.length > 0 && (
-                <ul className="mt-5 divide-y divide-border">
-                  {result.transactions.map((t: any) => (
-                    <li key={t._id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                      <span className="truncate">{t.concept}</span>
-                      <span className="tabular">{money(t.amount)}</span>
-                    </li>
-                  ))}
-                </ul>
+              {!execution && (
+                <div className="mt-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
+                  <p className="text-sm font-medium">Nada se ha modificado todavía</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Confirma solo si la lista anterior coincide exactamente con lo que quieres hacer.
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button className="rounded-full" disabled={Boolean(processing)} onClick={confirmDraft}>
+                      {processing === "confirm" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                      Confirmar y ejecutar
+                    </Button>
+                    <Button variant="outline" className="rounded-full" disabled={Boolean(processing)} onClick={cancelDraft}>
+                      {processing === "cancel" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <X className="mr-2 h-4 w-4" />}
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {execution && (
+                <div className="mt-5 rounded-2xl border border-primary/30 bg-primary/10 p-4">
+                  <p className="text-sm font-medium">Confirmación aplicada correctamente</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Disponible actual: {money(execution.safeToSpend.available)} · límite diario: {money(execution.safeToSpend.dailyLimit)}
+                  </p>
+                </div>
               )}
 
               <p className="mt-5 rounded-xl bg-secondary p-3 text-xs text-muted-foreground">
-                <strong className="font-medium">Transcripción:</strong> {result.transcription}
+                <strong className="font-medium">Tu petición:</strong> {draft.transcription}
               </p>
             </Card>
           ) : (
@@ -262,11 +333,11 @@ export default function AsistentePage() {
                 <Wand2 className="h-3.5 w-3.5" /> Qué puedo hacer con tu nota
               </p>
               <ul className="space-y-3 text-sm text-muted-foreground">
-                <li>· Registrar cada gasto o ingreso con su categoría automática.</li>
-                <li>· Fijar o ajustar el presupuesto mensual de una categoría.</li>
-                <li>· Crear metas de ahorro con el aporte mensual necesario.</li>
-                <li>· Planificar salidas y decirte el máximo que puedes gastar.</li>
-                <li>· Avisarte cuando te acerques a cualquiera de tus límites.</li>
+                <li>· Crear, editar o eliminar movimientos.</li>
+                <li>· Gestionar cuentas, categorías y presupuestos.</li>
+                <li>· Crear o actualizar metas y salidas planificadas.</li>
+                <li>· Gestionar tus alertas.</li>
+                <li>· Mostrarte siempre un borrador exacto antes de modificar datos.</li>
               </ul>
             </Card>
           )}
